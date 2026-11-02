@@ -73,6 +73,15 @@ select,input[type=range]{font:inherit;background:#0a0e30;color:#f0ecdc;border:2p
 .kv b{color:#b8c4ff;font-weight:normal}
 .mapmodes button{flex:1}
 #homecv{width:100%;image-rendering:pixelated}.foecv,.petcv{image-rendering:pixelated;flex:none}
+/* v6 UI polish: Breath of Fire DS-style windows: deep blue gradient, cream frame, warm gold accents */
+.win{background:linear-gradient(180deg,#3c52b8 0%,#24308a 38%,#141c5a 100%);border:3px solid #f6eed6;outline:2px solid #120a18;border-radius:7px;box-shadow:inset 0 0 0 2px #7484e0,inset 0 -8px 14px #0a0e3a99,0 4px 0 #0008}
+h3,h4{color:#ffd878;text-shadow:1px 1px #2a1408}
+button{background:linear-gradient(180deg,#6474dc 0%,#3a48aa 55%,#28347e 100%);border-color:#f6eed6;border-radius:5px;box-shadow:inset 0 1px 0 #a8b4ff}
+button:hover:not(:disabled){background:linear-gradient(180deg,#8494f4,#4654b8)}
+button.on{background:linear-gradient(180deg,#f4cc5c,#b07820 60%,#7a4a10);box-shadow:inset 0 1px 0 #fff0b0;color:#fff8e8}
+.row{border-bottom-color:#33408e}
+.prog{box-shadow:0 0 0 1px #f6eed6;border-radius:2px}
+#stage{background:#120a18;border-radius:7px}
 
 </style></head><body>
 <div id="app">
@@ -1778,6 +1787,7 @@ C.tryCatch = function (S, B, k) {
 const _win = C.win;
 C.win = function (S, B, ev) {
   const out = _win(S, B, ev); const end = out.find(x => x.t === 'end'); const p = C.activePet(S);
+  if (B.wild) { S.kills[B.e.key] = Math.max(0, (S.kills[B.e.key] || 1) - 1); S.stats.wildWins = (S.stats.wildWins || 0) + 1; } // wild pets are not monster kills (bestiary, bounties)
   if (end && p) { const x = Math.round((4 + B.e.lvl * 2) * (B.e.boss ? 4 : 1) * C.xpScale(p.lvl, B.e.lvl)); C.petXp(S, x, p); end.petxp = x; const ps = C.petStats(p); p.hp = Math.min(ps.hp, Math.max(p.hp, 0) + Math.round(ps.hp * .3)); }
   if (end && R() < (B.e.boss ? .5 : .04)) { C.bagAdd(S, 'snare', 1); end.snare = 1; }
   return out;
@@ -2595,6 +2605,293 @@ A.RAR_COL = { common: '#c8c0b0', uncommon: '#5cc85c', rare: '#58a0ff', epic: '#c
 })();
 
 </script><script>
+// Brian Quest v6 art: everything redrawn in the v5 (Breath of Fire DS/3DS-inspired) style.
+// Cleaner cel shading (dither only at band edges), chibi 3/4 hero with idle/walk/attack/hurt/cast frames,
+// new enemy families and larger boss bodies, per-region painted battle backdrops, 3/4 tiled town + local maps.
+(function () {
+'use strict';
+const A = window.ART, C = window.BQ, mix = A.mix, R0 = A.RAMPS;
+// ---- cel shading: hard bands with a thin dithered seam (less noise than v4's full Bayer gradients) ----
+A.lvl = (l, x, y) => { const f = Math.floor(l), t = l - f; const up = t > .62 ? 1 : t < .38 ? 0 : (t > A.bayer(x, y) ? 1 : 0); return Math.max(0, Math.min(4, f + up)); };
+const rp = k => A.ramp(Array.isArray(R0[k]) ? R0[k][2] : (k && k[0] === '#' ? k : '#888888'));
+const W = {
+  skin: A.ramp('#f0b48a'), hair: A.ramp('#e0b048'), beard: A.ramp('#c8642c'), shirt: A.ramp('#3e6ab8'), shirt2: A.ramp('#24408a'), pants: A.ramp('#3c5078'), boot: A.ramp('#6a4228'),
+  leather: A.ramp('#7a4e2c'), gold: A.ramp('#e0a830'), steel: A.ramp('#9aa4c0'), wood: A.ramp('#8a5a30'), bone: A.ramp('#e0d8bc'), white: '#fff8ec', ink: '#1c1020',
+};
+const tierOf = it => Math.max(1, Math.min(5, Math.floor((it.ilvl - 1) / 6) + 1));
+const metal = t => A.ramp(['#c07a40', '#8a94ae', '#5a94d4', '#a83a2a', '#d8dcf4'][t - 1]);
+const hide = t => A.ramp(['#8a5a34', '#6a4426', '#8a3a3a', '#b0c4d4', '#4a3e66'][t - 1]);
+
+// ================= HERO =================
+const POSE = {
+  idle: f => ({ bob: [0, 0, 1, 1][f % 4], ha: 70, bl: -62, sway: f % 4 >= 2 ? 1 : 0 }),
+  walk: f => { const s = Math.sin(f / 6 * Math.PI * 2); return { bob: Math.abs(s) > .7 ? 0 : 1, lf: Math.round(3 * s), rf: Math.round(-3 * s), lu: s > .3 ? 1 : 0, ru: s < -.3 ? 1 : 0, ha: 70 - 14 * s, bl: -68, bsw: Math.round(-2 * s), sway: Math.round(s) }; },
+  atk: f => [{ lean: -1, ha: -110, bl: -150, lf: -1, rf: 1 }, { lean: 2, ha: -15, bl: -12, lf: -2, rf: 3 }, { lean: 3, ha: 35, bl: 40, lf: -2, rf: 3, sway: 1 }, { lean: 1, ha: 60, bl: -35 }][f % 4],
+  cast: f => ({ ha: -80, bl: -95, glow: 1, bob: f % 2 }),
+  hurt: () => ({ lean: -3, ha: 100, bl: -30, hurt: 1, lf: -1, rf: -2, sway: -1 }),
+  guard: () => ({ ha: 30, bl: -110, shieldUp: 1, lean: 1 }),
+  fish: f => ({ ha: -60, bl: [-125, -35, -55][f % 3], rod: 1, bob: f === 2 ? 1 : 0 }),
+  mine: f => [{ ha: -120, bl: -140, tool: 'pick' }, { lean: 2, ha: -5, bl: 10, tool: 'pick' }, { lean: 2, ha: 40, bl: 40, tool: 'pick' }, { ha: 20, bl: -30, tool: 'pick' }][f % 4],
+  sit: () => ({ sit: 1, ha: 80, bl: -60, noWeapon: 1 }),
+};
+A.POSE_FRAMES = { idle: 4, walk: 6, atk: 4, cast: 2, hurt: 1, guard: 1, fish: 3, mine: 4, sit: 1 };
+function blade(g, it, hx, hy, ang, tool) {
+  const t = it ? tierOf(it) : 1, rr = it ? A.rarRamp(it) : W.steel, M = metal(t);
+  const a = ang * Math.PI / 180, dx = Math.cos(a), dy = Math.sin(a), px = -dy, py = dx, P = (d, o) => [Math.round(hx + dx * d + px * o), Math.round(hy + dy * d + py * o)];
+  const S = (d, o, c) => { const [x, y] = P(d, o); g.set(x, y, c); };
+  if (tool === 'rod') { for (let i = -3; i < 27; i++) S(i, 0, i < 3 ? W.wood[1] : W.wood[3]); return P(27, 0); }
+  for (let i = -4; i <= 1; i++) S(i, 0, W.leather[i % 2 ? 3 : 1]); S(-5, 0, rr[3]);
+  const type = tool || (it && it.wtype) || 'sword';
+  if (type === 'pick') { for (let i = 1; i < 16; i++) S(i, 0, W.wood[3]); for (let o = -6; o <= 6; o++) { S(16, o, W.steel[o < 0 ? 4 : 2]); S(17, o * .8, W.steel[1]); } return; }
+  if (type === 'sword') { for (let o = -3; o <= 3; o++) S(2, o, o === 0 ? rr[3] : W.gold[o < 0 ? 4 : 2]); const L = 14 + t * 2; for (let i = 3; i < L; i++) { const w = i > L - 3 ? 0 : 1; for (let o = -w; o <= w; o++) S(i, o, o < 0 ? M[4] : o > 0 ? M[1] : M[3]); } S(L, 0, M[4]); }
+  else if (type === 'axe') { const L = 15 + t; for (let i = 3; i < L; i++) S(i, 0, W.wood[i % 3 ? 3 : 2]); for (let i = L - 6; i <= L; i++) for (let o = 1; o <= 3 + Math.min(3, (i - L + 6) / 2); o++) S(i, o, o > 4 ? M[4] : M[o > 2 ? 3 : 2]); S(L - 3, 1, rr[3]); }
+  else if (type === 'mace') { const L = 13 + t; for (let i = 3; i < L; i++) S(i, 0, W.wood[3]); const [cx, cy] = P(L + 1, 0); g.ell(cx, cy, 3.4, 3.4, M); for (const [ax, ay] of [[0, -4], [0, 4], [4, 0], [-3, -3], [3, -3], [3, 3], [-3, 3]]) g.set(cx + ax, cy + ay, M[4]); g.set(cx, cy, rr[3]); }
+  else { const L = 22 + t; for (let i = -6; i < L; i++) S(i, 0, W.wood[i % 4 ? 3 : 2]); for (let i = 0; i < 6; i++) for (let o = -(i < 3 ? 1 : 0); o <= (i < 3 ? 1 : 0); o++) S(L + i, o, o < 0 ? M[4] : M[3]); S(L - 1, 0, rr[3]); }
+}
+const HC = new Map();
+A.hero = function (equip, anim, f, mode) {
+  const sig = 'v6' + anim + f + (mode || '') + A.SLOTS_SIG(equip); if (HC.has(sig)) return HC.get(sig); if (HC.size > 400) HC.clear();
+  const g = A.Grid(64, 62), P = (POSE[anim] || POSE.idle)(f), T = sl => equip[sl] ? tierOf(equip[sl]) : 0, rr = sl => A.rarRamp(equip[sl]);
+  const by = (P.bob || 0) + (P.sit ? 6 : 0), ln = P.lean || 0, sw = P.sway || 0;
+  const E = (x, y, rx, ry, r, o) => g.ell(x, y + by, rx, ry, r, o), Rc = (x, y, w, h, r, o) => g.srect(x, y + by, w, h, r, o), Pl = (pts, r, o) => g.poly(pts.map(([x, y]) => [x, y + by]), r, o);
+  const pants = equip.legs ? hide(T('legs')) : W.pants, boots = equip.feet ? (T('feet') >= 3 ? metal(T('feet')) : hide(T('feet'))) : W.boot;
+  const sleeve = equip.chest && T('chest') >= 4 ? metal(T('chest')) : W.shirt, glove = equip.hands ? (T('hands') >= 3 ? metal(T('hands')) : hide(T('hands'))) : W.skin;
+  // cloak + long hair behind
+  if (equip.cloak) { const c = rr('cloak'); Pl([[21 + ln, 30], [32 + ln, 30], [30 + sw * 2 - 2, 52], [16 + sw * 2, 52]], c); }
+  Pl([[20 + ln, 18], [30 + ln, 16], [27 + ln - sw, 40], [19 + ln - sw, 40]], W.hair, { lx: .3 });
+  // back leg + back arm (shield side)
+  const legY = 45 - (P.sit ? 3 : 0);
+  if (P.sit) { Rc(22, legY + 2, 14, 5, pants); Rc(34, legY + 4, 6, 7, boots); }
+  else { Rc(22 + (P.rf || 0), legY - (P.ru || 0), 5, 8, A.ramp(pants[1])); Rc(21 + (P.rf || 0), legY + 7 - (P.ru || 0), 8, 5, A.ramp(boots[1])); }
+  Rc(19 + ln + (P.bsw || 0), 32, 4, 9, A.ramp(sleeve[1])); E(21 + ln + (P.bsw || 0), 42, 2.2, 2.2, glove);
+  if (equip.offhand && !P.noWeapon && !P.shieldUp) shield(g, equip.offhand, 15 + ln + (P.bsw || 0), 34 + by, false);
+  // torso: plaid shirt, cel shaded
+  E(28 + ln, 38, 8, 8, W.shirt, { lx: .7, ly: .6 });
+  for (let y = 31; y < 46; y++) for (let x = 20; x < 37; x++) { const c = g.get(x + ln, y + by); if (!c || !W.shirt.includes(c)) continue; if (x % 4 === 1 || y % 4 === 2) g.set(x + ln, y + by, W.shirt2[(x + y) % 3 ? 2 : 1]); }
+  if (equip.chest) { const t = T('chest'), M = t === 1 ? hide(1) : metal(t), R2 = rr('chest');
+    if (t === 1) { Rc(23 + ln, 32, 4, 11, M); Rc(30 + ln, 32, 4, 11, M); }
+    else if (t === 2) { for (let y = 32; y < 44; y++) for (let x = 21; x < 36; x++) if (g.get(x + ln, y + by)) g.set(x + ln, y + by, M[(x + y) % 2 ? 3 : 1]); }
+    else { E(29 + ln, 37, 7, 7, M, { lx: .8 }); g.rect(29 + ln, 33 + by, 1, 8, M[1]); g.set(31 + ln, 34 + by, R2[3]); }
+    if (t >= 4) E(33 + ln, 32, 4 + (t - 4), 3, M); if (t === 5) for (let x = 22; x < 36; x++) g.set(x + ln, 31 + by, W.gold[3]); }
+  Rc(20 + ln, 44, 17, 3, W.leather); g.rect(29 + ln, 44 + by, 3, 3, W.gold[3]);
+  if (equip.neck) { const c = rr('neck'); g.rect(31 + ln, 35 + by, 2, 2, c[3]); }
+  // front leg
+  if (!P.sit) { Rc(29 + (P.lf || 0), legY - (P.lu || 0), 6, 8, pants); Rc(29 + (P.lf || 0), legY + 7 - (P.lu || 0), 9, 5, boots); g.rect(30 + (P.lf || 0), legY + 7 - (P.lu || 0) + by, 7, 1, boots[3]); }
+  // head: chibi 3/4 facing right
+  const hx = 31 + ln, hy = 20;
+  E(hx - 3, hy - 1, 10, 10, W.hair, { lx: .6, ly: .9 });
+  E(hx + 1, hy + 1, 8, 8.5, W.skin, { lx: -.4, ly: .8 });
+  E(hx - 5, hy + 2, 2, 2.5, W.skin); // ear
+  Pl([[hx - 9, hy - 5], [hx + 2, hy - 11], [hx + 8, hy - 7], [hx + 4, hy - 7], [hx + 1, hy - 5], [hx - 2, hy - 5], [hx - 6, hy + 2]], W.hair, { lx: .2 });
+  E(hx + 3, hy + 7, 6, 5, W.beard, { ly: 1.4 }); Pl([[hx - 1, hy + 9], [hx + 3, hy + 17 + sw], [hx + 7, hy + 9]], W.beard); g.rect(hx + 2, hy + 5 + by, 6, 1, W.beard[1]); g.set(hx + 7, hy + 7 + by, '#7a3a30');
+  if (P.hurt) { g.rect(hx + 3, hy + by, 3, 1, W.ink); } else { g.rect(hx + 4, hy - 1 + by, 2, 3, W.ink); g.set(hx + 4, hy - 1 + by, W.white); g.set(hx + 5, hy + 1 + by, '#4a8ad0'); }
+  g.rect(hx + 3, hy - 3 + by, 4, 1, W.hair[1]); g.set(hx + 8, hy + 2 + by, W.skin[1]); g.set(hx + 8, hy + 3 + by, W.skin[1]);
+  if (equip.head) { const it = equip.head, t = T('head'), M = t === 1 ? hide(1) : metal(t), R2 = rr('head');
+    if (it.unique === 'hollowcrown') { g.srect(hx - 7, hy - 12 + by, 15, 3, A.ramp('#3a3050')); for (let i = 0; i < 5; i++) g.set(hx - 7 + i * 3, hy - 13 + by, W.bone[3]); g.set(hx, hy - 11 + by, '#b060ff'); }
+    else { E(hx - 1, hy - 6, 10, 6, M, { ly: 1.3 }); for (let x = hx - 10; x < hx + 9; x++) if (g.get(x, hy - 1 + by)) g.set(x, hy - 1 + by, M[1]);
+      if (t >= 3) Rc(hx - 8, hy - 2, 3, 7, M); if (t >= 4) for (let i = 0; i < 6; i++) g.set(hx - 2 + (i % 2), hy - 12 - i + by, R2[3 - (i % 2)]);
+      if (t === 5) { Pl([[hx - 8, hy - 8], [hx - 14, hy - 15], [hx - 6, hy - 10]], R2); Pl([[hx + 5, hy - 9], [hx + 10, hy - 16], [hx + 7, hy - 8]], R2); } } }
+  // front arm + weapon
+  const sx = 33 + ln, sy = 33 + by, a = P.ha * Math.PI / 180, hx2 = Math.round(sx + Math.cos(a) * 6), hy2 = Math.round(sy + Math.sin(a) * 8);
+  for (let i = 0; i <= 8; i++) { const x = sx + (hx2 - sx) * i / 8, y = sy + (hy2 - sy) * i / 8; g.srect(Math.round(x) - 1, Math.round(y) - 1, 3, 3, sleeve); }
+  let rodTip = null;
+  if (P.rod) rodTip = blade(g, null, hx2, hy2, P.bl, 'rod'); else if (P.tool) blade(g, equip.weapon, hx2, hy2, P.bl, P.tool); else if (equip.weapon && !P.noWeapon) blade(g, equip.weapon, hx2, hy2, P.bl);
+  g.ell(hx2, hy2, 2.3, 2.3, glove);
+  if (equip.offhand && P.shieldUp) shield(g, equip.offhand, 35 + ln, 26 + by, true);
+  A.outline(g, .85);
+  if (P.glow) { const c = equip.weapon ? A.rarRamp(equip.weapon)[4] : '#a8e0ff'; for (let i = 0; i < 8; i++) g.set(hx2 + Math.round(Math.cos(i * .8) * 6), hy2 - 4 + Math.round(Math.sin(i * .8) * 5), c); }
+  const cv = A.toCanvas(g, mode); cv.rodTip = rodTip; HC.set(sig, cv); return cv;
+};
+function shield(g, it, x, y, front) { const t = tierOf(it), M = metal(t), R2 = A.rarRamp(it), h = 10 + t, w = front ? 8 : 5;
+  if (t === 1) { g.ell(x + w / 2, y + h / 2, w / 2 + 1, h / 2, R2); g.ell(x + w / 2, y + h / 2, 1.5, 1.5, M); return; }
+  g.poly([[x, y], [x + w, y], [x + w, y + h * .6], [x + w / 2, y + h], [x, y + h * .6]], R2); for (let i = 0; i < h * .85; i++) g.set(Math.round(x + w / 2), y + i, M[3]); for (let i = 0; i <= w; i++) g.set(x + i, y, M[4]); }
+
+// ================= ENEMIES =================
+const EC = new Map();
+A.enemy = function (def, f, mode) {
+  const sig = 'v6' + def.key + f + (mode || ''); if (EC.has(sig)) return EC.get(sig); if (EC.size > 300) EC.clear();
+  const boss = !!def.boss, N = boss ? 104 : 72, k = boss ? 1.45 : 1, g = A.Grid(N, N), cx = N / 2, gy = N - 5, b = f % 2, b4 = f % 4;
+  const X = v => cx + (v - 32) * k, Y = v => gy - (58 - v) * k, K = v => v * k;
+  const E = (x, y, rx, ry, r, o) => g.ell(X(x), Y(y), K(rx), K(ry), r, o), Pl = (pts, r, o) => g.poly(pts.map(([x, y]) => [X(x), Y(y)]), r, o);
+  const Rc = (x, y, w, h, r, o) => g.srect(Math.round(X(x)), Math.round(Y(y)), Math.max(1, Math.round(K(w))), Math.max(1, Math.round(K(h))), r, o);
+  const dot = (x, y, c, s = 1) => g.rect(Math.round(X(x)), Math.round(Y(y)), Math.max(1, Math.round(K(s))), Math.max(1, Math.round(K(s))), c);
+  const L = (x0, y0, x1, y1, c) => g.line(X(x0), Y(y0), X(x1), Y(y1), c);
+  const c = rp(def.c), glow = def.glow ? rp(def.glow) : A.ramp('#ff8a30'), eye = boss ? '#ffe040' : '#ff4a2a', key = def.key;
+  let head = [16, 26];
+  switch (def.sprite) {
+    case 'beast': {
+      Pl([[48, 36], [60, 22 - b * 2], [62, 26], [52, 40]], c); Rc(42, 46, 4, 11 - b, A.ramp(c[1])); Rc(26, 46, 4, 11, A.ramp(c[1]));
+      E(38, 40, 14, 8 + b * .4, c); E(25, 39, 9, 10, c); E(36, 44, 9, 3, A.ramp(c[3]));
+      Rc(46, 46, 4, 10 + b, c); Rc(29, 47, 4, 10 - b, c); for (const x of [29, 46, 26, 42]) Rc(x - 1, 56, 6, 2, A.ramp(c[1]));
+      E(15, 29, 8, 7, c); E(7, 33, 6, 3.5, c, { ly: .3 }); Pl([[11, 23], [14, 13], [18, 23]], c); Pl([[17, 23], [21, 14], [23, 24]], c); dot(13, 15, c[1]);
+      dot(12, 27, eye, 1.5); dot(1, 31, W.ink, 1.5); for (let i = 0; i < 3; i++) dot(4 + i * 2, 35, W.white);
+      for (let i = 0; i < 6; i++) dot(26 + i * 4, 31 + (i % 2), c[4]); head = [15, 22]; break;
+    }
+    case 'boar': {
+      Rc(22, 47, 5, 10 - b, A.ramp(c[1])); Rc(42, 47, 5, 10, A.ramp(c[1])); E(36, 39, 18, 12 + b * .4, c); Rc(28, 48, 5, 9 + b, c); Rc(48, 48, 5, 9 - b, c);
+      E(16, 39, 10, 9, c); E(6, 42, 5, 4, A.ramp('#d08a78')); dot(4, 41, W.ink, 1.5); dot(4, 44, W.ink, 1.5);
+      Pl([[8, 46], [3, 36], [11, 44]], W.bone); Pl([[13, 47], [10, 38], [16, 45]], W.bone); dot(13, 35, eye, 1.6);
+      for (let i = 0; i < 9; i++) Pl([[22 + i * 3, 29], [24 + i * 3, 22 - (i % 2) * 2], [26 + i * 3, 29]], A.ramp(c[1])); head = [15, 30]; break;
+    }
+    case 'toad': {
+      E(19, 53, 7, 4, c); E(47, 53, 7, 4, c); E(33, 42, 19, 13 + b * .6, c); E(33, 48, 13, 7, A.ramp('#e0d8a0'));
+      E(23, 30, 5, 5, c); E(42, 30, 5, 5, c); E(23, 29, 3, 3, A.ramp('#f0d040')); E(42, 29, 3, 3, A.ramp('#f0d040')); dot(22, 29, W.ink, 1.5); dot(41, 29, W.ink, 1.5);
+      for (const [x, y] of [[27, 37], [38, 35], [45, 41], [24, 44]]) E(x, y, 2, 1.5, A.ramp(c[3])); for (let x = 16; x < 50; x++) g.set(X(x), Y(41 + Math.sin(x / 4) * .8), c[1]); head = [32, 24]; break;
+    }
+    case 'worm': {
+      for (let i = 7; i >= 0; i--) { const x = 12 + i * 6.5, y = 42 + Math.sin((i + f) * .9) * 4; E(x, y, 6, 8 - i * .35, i % 2 ? c : A.ramp(c[3])); dot(x - 1, y - 5, c[4]); }
+      E(9, 41, 7, 8, c); E(5, 41, 3.5, 5, A.ramp('#4a1828')); for (let i = 0; i < 5; i++) dot(3 + (i % 2), 37 + i * 2, W.white); head = [9, 32]; break;
+    }
+    case 'drake': {
+      const wy = b ? -6 : 0, wyrm = key === 'wyrm';
+      if (!wyrm) { Pl([[30, 32], [44, 8 + wy], [58, 12 + wy], [50, 30]], A.ramp(c[1]), { lx: 1 }); for (let i = 0; i < 3; i++) L(44 + i * 5, 10 + wy + i, 38 + i * 4, 31, c[0]); }
+      Pl([[48, 38], [66, 30 - b], [64, 35], [50, 47]], c); Rc(28, 46, 5, 11, A.ramp(c[1])); Rc(44, 46, 5, 11, c); E(38, 40, 15, 9, c); E(36, 44, 10, 4, A.ramp('#f0c878'));
+      for (let i = 0; i < 4; i++) L(30 + i * 4, 41, 30 + i * 4, 47, A.ramp('#f0c878')[1]);
+      Pl([[24, 38], [16, 22], [22, 20], [30, 36]], c); E(15, 19, 8, 6, c); E(7, 22, 6, 3, c, { ly: .2 }); Pl([[18, 14], [25, 5], [21, 15]], W.bone); if (wyrm) Pl([[22, 18], [30, 10], [27, 20]], W.bone);
+      dot(12, 17, '#ffe14a', 1.6); for (let i = 0; i < 6; i++) Pl([[24 + i * 5, 32], [26 + i * 5, 27 - (i % 2) * 2], [28 + i * 5, 32]], A.ramp(c[3])); if (b) dot(0, 23, wyrm ? '#a0e080' : '#ff9a30', 2);
+      head = [15, 12]; break;
+    }
+    case 'golem': {
+      Rc(21, 47, 10, 11, A.ramp(c[1])); Rc(36, 47, 10, 11, c); Rc(13, 21, 40, 28, c, { grad: 1.2 }); Rc(23, 6, 20, 16, c, { grad: 1 });
+      Rc(4, 23 + b, 10, 27, A.ramp(c[1])); Rc(52, 23 - b, 10, 27, c); Rc(2, 46 + b, 14, 9, c); Rc(51, 46 - b, 14, 9, c);
+      dot(28, 12, glow[4], 2.5); dot(37, 12, glow[4], 2.5);
+      for (const [a1, a2, a3, a4] of [[19, 26, 26, 34], [26, 34, 22, 44], [41, 24, 36, 32], [36, 32, 43, 43], [30, 36, 34, 46]]) { L(a1, a2, a3, a4, glow[3]); L(a1 + 1, a2, a3 + 1, a4, glow[b4 % 2 ? 4 : 2]); }
+      if (key === 'colossus' || def.c === 'ice') for (const x of [6, 54]) Pl([[x, 23], [x + 4, 12], [x + 8, 23]], A.ramp('#c8ecff'));
+      head = [32, 4]; break;
+    }
+    case 'wraith': {
+      const fy = Math.round(Math.sin(f * Math.PI / 2) * 2);
+      Pl([[18, 18 + fy], [46, 18 + fy], [54, 58], [10, 58]], c, { lx: .4 });
+      for (let i = 0; i < 6; i++) Pl([[10 + i * 7.3, 56], [13 + i * 7.3, 62 - (i + f) % 2 * 3], [17 + i * 7.3, 56]], c);
+      E(32, 16 + fy, 11, 11, c); E(30, 18 + fy, 7, 7, A.ramp('#120c20')); dot(27, 17 + fy, glow[4], 2); dot(33, 17 + fy, glow[4], 2);
+      Pl([[16, 30 + fy], [4, 40 + fy + b], [8, 42 + fy], [20, 36 + fy]], c); for (let i = 0; i < 3; i++) L(4 + i, 40 + fy + b, 1 + i, 46 + fy, c[4]);
+      if (key === 'drowned') { for (let i = 0; i < 5; i++) L(20 + i * 6, 30, 19 + i * 6, 52, A.ramp('#4a8a5a')[2]); L(48, 14, 50, 58, W.wood[2]); E(48, 12, 3, 3, A.ramp('#60e0c0')); }
+      head = [32, 4 + fy]; break;
+    }
+    case 'skel': {
+      Rc(25, 44, 3, 13, W.bone); Rc(36, 44, 3, 13, W.bone); E(32, 42, 8, 3, W.bone);
+      for (let i = 0; i < 4; i++) E(32, 27 + i * 4, 9 - i, 1.4, W.bone); Rc(31, 24, 2, 18, W.bone);
+      E(32, 15 + b * .5, 8, 8, W.bone); E(29, 15, 2.2, 2.6, A.ramp('#1a1018')); E(35, 15, 2.2, 2.6, A.ramp('#1a1018')); dot(29, 15, eye); dot(35, 15, eye); for (let i = 0; i < 4; i++) dot(28 + i * 2, 21, W.bone[1]);
+      L(22, 26, 16, 38 - b, W.bone[3]); L(42, 26, 47, 36, W.bone[3]); L(16, 38 - b, 8, 18 - b, A.ramp('#9a7a6a')[3]); L(17, 38 - b, 9, 18 - b, A.ramp('#9a7a6a')[1]);
+      head = [32, 6]; break;
+    }
+    case 'knight': {
+      Rc(24, 44, 6, 13, A.ramp(c[1])); Rc(34, 44, 6, 13, c); Rc(22, 22, 20, 24, c, { grad: 1 }); E(24, 22, 6, 5, c); E(40, 22, 6, 5, c);
+      E(32, 13, 8, 9, c, { ly: 1.2 }); Rc(26, 12, 12, 2, A.ramp('#120c18')); dot(28, 12, eye); dot(34, 12, eye);
+      Pl([[10, 26], [20, 24], [20, 44], [15, 50], [10, 44]], A.ramp(def.glow || '#7a2a2a')); L(15, 26, 15, 48, W.gold[3]);
+      L(44, 30, 56 - b, 6, W.steel[4]); L(45, 30, 57 - b, 6, W.steel[2]); Rc(41, 29, 7, 2, W.gold);
+      if (key === 'warlord') { Pl([[24, 9], [17, 1], [26, 7]], W.bone); Pl([[40, 9], [47, 1], [38, 7]], W.bone); Pl([[40, 22], [56, 26], [54, 54], [42, 50]], A.ramp('#9a2a2a')); }
+      head = [32, 3]; break;
+    }
+    default: { // 'man' family: bandit, witch, cultist, ghoul, Kell
+      const robe = key === 'hag' || key === 'cultist', hunch = key === 'ghoul' ? 3 : 0;
+      Rc(26, 45, 5, 12, A.ramp(c[1])); Rc(33, 45, 5, 12, c); Rc(24, 55, 7, 3, W.boot); Rc(32, 55, 8, 3, W.boot);
+      if (robe) Pl([[22, 24], [42, 24], [46, 56], [18, 56]], c); else Rc(23, 25 + hunch, 18, 21, c, { grad: 1 });
+      Rc(23, 43, 18, 3, W.leather);
+      E(30 - hunch, 16 + hunch, 7, 7.5, key === 'ghoul' ? A.ramp('#a8b890') : W.skin); dot(26 - hunch, 15 + hunch, key === 'cultist' ? glow[4] : eye, 1.4);
+      if (key === 'hag') { Pl([[20, 12], [32, -6 + b], [40, 12]], A.ramp('#3a2a4a')); E(30, 11, 13, 2, A.ramp('#3a2a4a')); L(44, 20, 46, 56, W.wood[2]); E(44, 18, 3, 3, A.ramp('#a060ff')); }
+      else if (key === 'cultist' || def.hood) { Pl([[21, 18], [30, 5], [39, 18], [38, 26], [22, 26]], rp(def.hood || 'blood')); E(29, 17, 5, 5, A.ramp('#120c18')); dot(27, 16, glow[4], 1.4); dot(31, 16, glow[4], 1.4); }
+      else if (key === 'bandit') { Rc(23, 10, 15, 3, A.ramp('#a83a2a')); Pl([[37, 11], [43, 14 + b], [38, 14]], A.ramp('#a83a2a')); Rc(22, 18, 12, 3, A.ramp('#3a2a2a')); }
+      else if (key === 'ghoul') for (let i = 0; i < 3; i++) L(16 + i, 36 + b, 12 + i * 2, 42 + b, W.bone[4]);
+      L(17, 34, 23, 28, W.skin[2]); L(18, 34, 10, 44 - b, W.steel[4]); L(19, 34, 11, 44 - b, W.steel[2]);
+      if (key === 'kell') { L(44, 34, 52, 44 + b, W.steel[4]); L(45, 34, 53, 44 + b, W.steel[2]); Pl([[22, 24], [42, 24], [48, 52], [40, 48]], A.ramp('#7a1a2a')); }
+      head = [30, 6 + hunch];
+    }
+  }
+  if (def.crown || key === 'hollowking' || key === 'rimequeen') { const [hx, hy] = head, cr = key === 'rimequeen' ? A.ramp('#c8f0ff') : W.gold; Rc(hx - 6, hy, 12, 3, cr); for (let i = 0; i < 4; i++) Pl([[hx - 6 + i * 4, hy], [hx - 4 + i * 4, hy - 5], [hx - 2 + i * 4, hy]], cr); dot(hx, hy + 1, '#ff3a6a', 1.2); }
+  if (key === 'pyrelord') { const [hx, hy] = head; for (let i = 0; i < 5; i++) Pl([[hx - 8 + i * 4, hy + 1], [hx - 6 + i * 4, hy - 6 - ((i + f) % 2) * 3], [hx - 4 + i * 4, hy + 1]], A.ramp('#ff8a20')); }
+  A.outline(g, .85);
+  if (boss) { const col = (C.loreOf ? C.loreOf(key).glow : null) || '#ffb040'; for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 + f * .4; g.set(cx + Math.cos(a) * (N * .42), gy - N * .38 + Math.sin(a) * N * .3, i % 2 ? col : '#fff4d0'); } }
+  const cv = A.toCanvas(g, mode); EC.set(sig, cv); return cv;
+};
+
+// ================= BATTLE BACKDROPS (per region) =================
+const SKY = [['#3a5cb8', '#5a84d4', '#8ab4ea', '#c8dcf0', '#f8e4c0'], ['#3a4a48', '#566a60', '#7a8a78', '#a8b098', '#d8d4b0'], ['#2a0c18', '#5a1a20', '#9a3424', '#d8662c', '#ffb060'], ['#3a5a98', '#5a84c0', '#94b8de', '#cce0f2', '#f4f4fa'], ['#0c0a1c', '#1a1434', '#2c2050', '#463470', '#6a4a88']];
+const CAMPSKY = ['#060818', '#0c1230', '#16204a', '#22305e', '#34406e'];
+function bands(x, cols, y0, y1, w) { const n = cols.length, h = (y1 - y0) / n; for (let i = 0; i < n; i++) { x.fillStyle = cols[i]; x.fillRect(0, Math.round(y0 + i * h), w, Math.ceil(h) + 1); for (let xx = 0; xx < w; xx += 2) if (i < n - 1) { x.fillStyle = cols[i + 1]; x.fillRect(xx + (i % 2), Math.round(y0 + (i + 1) * h) - 1, 1, 1); } } }
+const cvs = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.imageSmoothingEnabled = false; return [c, x]; };
+const blit = (x, g, px, py) => { const c = A.toCanvas(g); x.drawImage(c, Math.round(px), Math.round(py)); if (px + g.w > 512) x.drawImage(c, Math.round(px - 512), Math.round(py)); };
+const hsh = (a, b) => { let h = (a * 374761393 + b * 668265263) ^ 0x5bd1e995; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+function treeRound(pal, s) { const g = A.Grid(36, 60), lf = pal.tree, tr = pal.trunk; g.srect(16, 36, 5, 24, tr); g.ell(18, 26, 14, 12, lf); g.ell(10, 31, 8, 7, lf); g.ell(27, 31, 9, 7, lf); g.ell(17, 16, 10, 9, lf, { bias: .3 }); for (let i = 0; i < 7; i++) g.set(8 + hsh(s, i) * 16, 12 + hsh(i, s) * 10, lf[4]); A.outline(g, .8); return g; }
+function treePine(pal, s, snow) { const g = A.Grid(32, 62); g.srect(14, 50, 4, 12, pal.trunk); for (let i = 0; i < 4; i++) { const w = 14 - i * 3, y = 52 - i * 11; g.poly([[16 - w, y], [16, y - 15], [16 + w, y]], pal.tree); if (snow) for (let x = -w + 2; x < w - 1; x++) if (Math.abs(x) < w - 2 - ((x + i) % 3)) g.set(16 + x, y - 1 - Math.round((w - Math.abs(x)) * .25), x % 2 ? '#ffffff' : '#e4eefa'); } A.outline(g, .8); return g; }
+function treeDead(col, s) { const g = A.Grid(36, 60), r = A.ramp(col); g.srect(16, 22, 4, 38, r); for (let i = 0; i < 4; i++) { const y = 26 + i * 7, d = i % 2 ? 1 : -1; g.line(18, y, 18 + d * (12 - i * 2), y - 8, r[2]); g.line(18, y + 1, 18 + d * (12 - i * 2), y - 7, r[1]); } A.outline(g, .8); return g; }
+function rock(col, s, big) { const g = A.Grid(40, 30), r = A.ramp(col), w = big ? 18 : 12; g.poly([[20 - w, 30], [20 - w + 4, 12 + hsh(s, 1) * 6], [18, 4 + hsh(s, 2) * 6], [20 + w - 4, 10], [20 + w, 30]], r, { lx: .9 }); A.outline(g, .8); return g; }
+function tomb(s) { const g = A.Grid(20, 28), r = A.ramp('#7a7488'); if (hsh(s, 3) > .5) { g.srect(6, 6, 8, 22, r); g.srect(2, 10, 16, 4, r); } else { g.srect(3, 8, 14, 20, r); g.ell(10, 9, 7, 5, r); g.rect(8, 13, 4, 1, r[1]); } A.outline(g, .8); return g; }
+function house3q(s, rich, wall0) { const g = A.Grid(74, 80), roof = A.ramp(['#b4442e', '#4a6aa0', '#6a8a3a', '#8a4a7a', '#b07a2a'][Math.floor(hsh(s, 1) * 5)]), wall = A.ramp(wall0 || (rich ? '#b8b0a8' : '#ead8b0')), side = A.ramp(mix(wall[2], '#6a4a5a', .35)), tim = W.wood;
+  const w = 40 + Math.floor(hsh(s, 2) * 10), h = 26 + Math.floor(hsh(s, 3) * 10), x0 = 6, y0 = 80 - h, sd = 14;
+  g.srect(x0, y0, w, h, wall); g.poly([[x0 + w, y0], [x0 + w + sd, y0 - 6], [x0 + w + sd, 80 - 6], [x0 + w, 80]], side);
+  if (!rich) { for (let x = x0; x < x0 + w; x += 10) g.rect(x, y0, 2, h, tim[1]); g.rect(x0, y0 + 9, w, 2, tim[1]); }
+  g.poly([[x0 - 5, y0 + 1], [x0 + 8, y0 - 22], [x0 + w + sd + 4, y0 - 26], [x0 + w + 6, y0 + 1]], roof, { lx: .2 }); for (let y = y0 - 20; y < y0; y += 4) for (let x = x0 - 2; x < x0 + w + sd; x++) if (g.get(x, y) && roof.includes(g.get(x, y))) g.set(x, y, roof[1]);
+  g.srect(x0 + w - 6, y0 - 30, 6, 12, A.ramp('#8a6a62'));
+  for (let i = 0; i < 2; i++) { const wx = x0 + 6 + i * (w - 20); g.rect(wx - 1, y0 + 12, 10, 9, tim[1]); g.rect(wx, y0 + 13, 8, 7, '#ffd27a'); g.rect(wx, y0 + 13, 3, 3, '#fff0c0'); g.rect(wx + 4, y0 + 13, 1, 7, tim[1]); }
+  g.srect(x0 + (w >> 1) - 5, 80 - 15, 10, 15, tim); g.set(x0 + (w >> 1) + 3, 80 - 8, W.gold[3]); A.outline(g, .8); return g; }
+function paint(L, biome, kind, extra) {
+  const pal = A.BIOME_PAL[biome], camp = kind === 'camp';
+  { const [c, x] = cvs(256, 176); bands(x, camp ? CAMPSKY : SKY[biome], 0, 124, 256); x.fillStyle = (camp ? CAMPSKY : SKY[biome])[4]; x.fillRect(0, 124, 256, 52);
+    const sun = camp || biome === 4 ? '#e8ecff' : biome === 2 ? '#ffd080' : '#fff6d0'; x.fillStyle = sun; x.beginPath(); x.arc(206, 30, 9, 0, 7); x.fill(); x.fillStyle = 'rgba(255,240,200,.18)'; x.beginPath(); x.arc(206, 30, 15, 0, 7); x.fill();
+    if (camp || biome === 4) for (let i = 0; i < 60; i++) { x.fillStyle = i % 4 ? '#9a98c8' : '#ffffff'; x.fillRect(hsh(i, 1) * 256 | 0, hsh(i, 2) * 90 | 0, 1, 1); }
+    L.sky = c; }
+  { const [c, x] = cvs(512, 176); // two mountain ranges, cel lit from the left, warm haze
+    const far = A.ramp(mix(pal.far[2], SKY[biome][3], .35)), near = pal.far;
+    for (const [rg, base, amp, seed] of [[far, 82, 26, 3], [near, 98, 30, 7]]) for (let xx = 0; xx < 512; xx++) {
+      const h = amp * (.55 + .45 * Math.sin(xx / 512 * Math.PI * 2 * (seed % 4 + 2) + seed) * Math.sin(xx / 512 * Math.PI * 2 * 3 + seed * 1.7)) + amp * .4 * Math.abs(Math.sin(xx / 37 + seed)), top = Math.round(base - h);
+      const sl = Math.sin(xx / 37 + seed + .05) - Math.sin(xx / 37 + seed - .05);
+      for (let y = top; y < 140; y++) { const d = y - top; let i = sl > 0 ? 3 : 2; if (d > 10) i--; if (d > 26) i = 1; if (d < 2) i = 4; let col = rg[i];
+        if ((biome === 3 || (biome === 2 && rg === far)) && d < 6 + (xx % 3) && h > amp * .8) col = biome === 3 ? (sl > 0 ? '#ffffff' : '#d4e2f4') : '#6a3a3a';
+        x.fillStyle = col; x.fillRect(xx, y, 1, 1); }
+      if (biome === 2 && rg === near && xx % 89 < 2 && h > amp * .7) for (let y = top + 2; y < top + 34; y++) { x.fillStyle = y % 4 ? '#ff7a20' : '#ffd060'; x.fillRect(xx + Math.round(Math.sin(y / 4)), y, 2, 1); }
+    }
+    x.fillStyle = SKY[biome][4] + '40'; x.fillRect(0, 110, 512, 30); L.far = c; }
+  { const [c, x] = cvs(512, 176); const hill = pal.hill;
+    for (let xx = 0; xx < 512; xx++) { const top = Math.round(118 - 8 * Math.sin(xx / 512 * Math.PI * 6) - 4 * Math.sin(xx / 23)); for (let y = top; y < 176; y++) { x.fillStyle = hill[y - top < 2 ? 4 : y - top < 8 ? 3 : 2]; x.fillRect(xx, y, 1, 1); } }
+    if (kind === 'town') { const rich = (extra || 1) >= 3; for (let i = 0; i < 7; i++) blit(x, house3q(i + (extra || 0) * 10, rich), i * 74 - 4, 56); }
+    else { const n = 12; for (let i = 0; i < n; i++) { const px = i * 512 / n + hsh(i, 3) * 18, py = 60 + hsh(i, 6) * 12;
+      if (biome === 0) blit(x, treeRound(pal, i), px, py);
+      else if (biome === 1) { blit(x, i % 3 ? treeDead('#4a4036', i) : treeRound(pal, i), px, py); for (let r = 0; r < 6; r++) { x.fillStyle = r % 2 ? '#8a9060' : '#6a7040'; x.fillRect(px + r * 3, py + 50 - (r % 3) * 4, 1, 10 + (r % 3) * 4); } }
+      else if (biome === 2) blit(x, rock(i % 2 ? '#5a3a34' : '#4a3a3a', i, i % 3 === 0), px, py + 32);
+      else if (biome === 3) blit(x, treePine(pal, i, true), px, py - 2);
+      else { blit(x, i % 2 ? tomb(i) : treeDead('#3a3448', i), px, i % 2 ? py + 34 : py); } } }
+    L.mid = c; }
+}
+const _layers = A.layers;
+A.layers = function (biome, kind, extra) { const L = _layers(biome, kind, extra); if (!L.v6 && kind !== 'mine' && kind !== 'dungeon') { paint(L, biome, kind, extra); L.v6 = 1; } return L; };
+
+// ================= TOWN + LOCAL MAPS (3/4 tiles) =================
+const LM = {}, _local = A.localMap;
+A.localMap = function (id, floor, L) {
+  const n = C.NODES[id], t = n.type; if (t === 'mine' || t === 'station' || t === 'dungeon') return _local(id, floor, L);
+  const key = id + ':' + (floor || 0); if (LM[key]) return LM[key];
+  const pal = A.BIOME_PAL[C.palOf(n)], [c, x] = cvs(256, 176), seed = id.length * 7;
+  const segD = (px, py, a, b) => { const dx = b.x - a.x, dy = b.y - a.y, tt = Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / ((dx * dx + dy * dy) || 1))); return Math.hypot(px - a.x - tt * dx, py - a.y - tt * dy); };
+  const pathD = (px, py) => { let e = 1e9; for (const [a, b] of L.links) e = Math.min(e, segD(px, py, L.sp[a], L.sp[b])); return e; };
+  const spotD = (px, py) => { let e = 1e9; for (const s of Object.values(L.sp)) e = Math.min(e, Math.hypot(s.x - px, s.y - py)); return e; };
+  const grass = pal.ground, dirt = pal.dirt, cob = A.ramp('#a09486'), water = A.ramp(C.palOf(n) === 3 ? '#6a9ac8' : '#3a7ab8');
+  const TS = 8;
+  for (let ty = 0; ty < 176; ty += TS) for (let tx = 0; tx < 256; tx += TS) {
+    const mx = tx + 4, my = ty + 4, pd = pathD(mx, my), sd = spotD(mx, my), nz = hsh(tx + seed, ty);
+    let R = grass, kind = 'g';
+    const wet = t === 'fish' ? (mx * .6 + my * .9 > 150 + Math.sin(my / 9) * 8 && mx > 60) : (t === 'town' && n.coast && my > 150 && mx > 150);
+    if (wet && pd > 5 && sd > 10) { R = water; kind = 'w'; } else if (pd < 5 || (t === 'town' && sd < 12)) { R = t === 'town' ? cob : dirt; kind = 'p'; }
+    const base = R[nz < .2 ? 1 : nz > .85 ? 3 : 2];
+    x.fillStyle = base; x.fillRect(tx, ty, TS, TS);
+    if (kind === 'w') { x.fillStyle = R[3]; if ((tx / TS + ty / TS) % 3 === 0) x.fillRect(tx + 1, ty + 3, 4, 1); continue; }
+    x.fillStyle = R[Math.min(4, kind === 'p' ? 3 : 3)]; x.fillRect(tx, ty, TS - 1, 1); x.fillRect(tx, ty, 1, TS - 1);
+    x.fillStyle = R[kind === 'p' ? 0 : 1]; x.fillRect(tx, ty + TS - 1, TS, 1); x.fillRect(tx + TS - 1, ty, 1, TS);
+    if (kind === 'g' && nz > .9) { x.fillStyle = ['#ffd060', '#ff8aa0', '#ffffff'][Math.floor(nz * 100) % 3]; x.fillRect(tx + 3, ty + 3, 1, 1); }
+    if (kind === 'g' && nz < .3) { x.fillStyle = R[4]; x.fillRect(tx + 2 + (nz * 10 | 0) % 4, ty + 3, 1, 2); }
+  }
+  // props: trees / rocks with soft drop shadows (3/4 view), houses at town districts
+  const props = [];
+  if (t !== 'town') for (let i = 0; i < 70; i++) { const px = hsh(i + seed, 61) * 256, py = hsh(i + seed, 62) * 176; if (pathD(px, py) < 9 || spotD(px, py) < 13) continue; if (t === 'fish' && px * .6 + py * .9 > 140 && px > 60) continue; props.push([py, () => { const b = C.palOf(n), g = b === 3 ? treePine(pal, i, true) : b === 1 || b === 4 ? treeDead(b === 4 ? '#3a3448' : '#4a4036', i) : b === 2 ? rock('#5a3a34', i) : treeRound(pal, i); const sc = .42; x.fillStyle = 'rgba(30,14,24,.3)'; x.beginPath(); x.ellipse(px, py + 1, 6, 2.5, 0, 0, 7); x.fill(); x.drawImage(A.toCanvas(g), px - g.w * sc / 2, py - g.h * sc, g.w * sc, g.h * sc); }]); }
+  else { for (const s of Object.values(L.sp)) { if (s.kind === 'gate' || s.kind === 'docks') continue; props.push([s.y - 6, () => { const g = house3q(s.x * 7 + s.y, s.kind === 'guild' || s.kind === 'estate', s.kind === 'inn' ? '#e8c890' : null), sc = .38; x.fillStyle = 'rgba(30,14,24,.3)'; x.fillRect(s.x - 12, s.y - 6, 30, 4); x.drawImage(A.toCanvas(g), s.x - 14, s.y - 34, g.w * sc, g.h * sc); }]); }
+    for (let i = 0; i < 14; i++) { const px = hsh(i + seed, 71) * 256, py = hsh(i + seed, 72) * 176; if (pathD(px, py) < 12 || spotD(px, py) < 24) continue; props.push([py, () => { const g = treeRound(pal, i), sc = .36; x.drawImage(A.toCanvas(g), px - 6, py - 20, g.w * sc, g.h * sc); }]); } }
+  props.sort((a, b) => a[0] - b[0]).forEach(p => p[1]());
+  if (t === 'town' && n.coast && L.sp.docks) { const s = L.sp.docks; for (let yy = s.y - 2; yy < 176; yy++) { x.fillStyle = W.wood[yy % 3 ? 3 : 1]; x.fillRect(s.x - 3, yy, 7, 1); } }
+  return LM[key] = c;
+};
+})();
+
+</script><script>
 // Brian Quest v3: UI, scenes, battle playback, map travel, fishing, crafting, estate.
 (() => {
 'use strict';
@@ -2840,7 +3137,7 @@ function draw(dt) {
     const lx = FOE_X - foeLunge * 16; foeLunge = Math.max(0, foeLunge - dt * 4);
     if (foeDying) { foeDying += dt; ctx.globalAlpha = Math.max(0, 1 - foeDying * 1.4); }
     ctx.fillStyle = 'rgba(10,8,20,.35)'; ctx.fillRect(lx - 18, GY - 1, 38, 3);
-    ctx.drawImage(ec, Math.round(lx - 36), Math.round(GY - (def.boss ? 72 : 67)));
+    ctx.drawImage(ec, Math.round(lx - ec.width / 2), Math.round(GY - ec.height + 5));
     ctx.globalAlpha = 1;
   }
   A.drawFg(ctx, L, scroll);
@@ -3329,7 +3626,7 @@ function drawHome() {
   ['trophy', 'garden', 'shaft'].forEach((r, i) => { const rx = 6 + i * 83; x.fillStyle = S.house.rooms[r] ? '#3a2a24' : '#1a1622'; x.fillRect(rx, 26, w, 80); x.strokeStyle = '#c8a060'; x.strokeRect(rx + .5, 26.5, w - 1, 79);
     if (!S.house.rooms[r]) { A.text(x, 'EMPTY', rx + 40, 62, '#6a6a7a', 'center'); return; }
     A.text(x, C.ROOMS[r].name.toUpperCase(), rx + 40, 30, '#ffd860', 'center');
-    if (r === 'trophy') { const tk = Object.keys(S.trophies || {}); tk.slice(0, 6).forEach((k, j) => { const e = A.enemy(Object.assign({ key: k }, C.ENEMIES[k]), 0); x.fillStyle = '#6a4a2a'; x.fillRect(rx + 4 + (j % 3) * 25, 40 + Math.floor(j / 3) * 32, 22, 26); x.drawImage(e, 0, 0, 72, 72, rx + 4 + (j % 3) * 25, 40 + Math.floor(j / 3) * 32, 22, 22); }); }
+    if (r === 'trophy') { const tk = Object.keys(S.trophies || {}); tk.slice(0, 6).forEach((k, j) => { const e = A.enemy(Object.assign({ key: k }, C.ENEMIES[k]), 0); x.fillStyle = '#6a4a2a'; x.fillRect(rx + 4 + (j % 3) * 25, 40 + Math.floor(j / 3) * 32, 22, 26); x.drawImage(e, 0, 0, e.width, e.height, rx + 4 + (j % 3) * 25, 40 + Math.floor(j / 3) * 32, 22, 22); }); }
     if (r === 'garden') for (let j = 0; j < 12; j++) { x.fillStyle = '#4a3020'; x.fillRect(rx + 6 + (j % 6) * 12, 70 + Math.floor(j / 6) * 16, 10, 4); x.drawImage(A.iconCanvas('herb'), rx + 4 + (j % 6) * 12, 56 + Math.floor(j / 6) * 16); }
     if (r === 'shaft') { x.fillStyle = '#0a0810'; x.fillRect(rx + 28, 44, 24, 60); x.fillStyle = '#7a5a3a'; x.fillRect(rx + 24, 40, 32, 5); x.fillRect(rx + 26, 44, 3, 60); x.fillRect(rx + 51, 44, 3, 60); x.drawImage(A.iconCanvas('ore'), rx + 33, 86); x.drawImage(A.iconCanvas('pick'), rx + 8, 80); }
   });
@@ -3337,7 +3634,7 @@ function drawHome() {
 }
 function heroMiniOn(m, x, y) { const hc = A.hero(S.equip, 'idle', Math.floor(performance.now() / 250) % 4); m.drawImage(hc, 0, 0, 64, 62, x - 11, y - 20, 32, 31); }
 function drawPanelArt() {
-  document.querySelectorAll('canvas.foecv').forEach(c => { const x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.clearRect(0, 0, 36, 36); x.drawImage(A.enemy(Object.assign({ key: c.dataset.foe }, C.ENEMIES[c.dataset.foe]), 0), 0, 0, 72, 72, 0, 0, 36, 36); });
+  document.querySelectorAll('canvas.foecv').forEach(c => { const x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.clearRect(0, 0, 36, 36); x.drawImage(A.enemy(Object.assign({ key: c.dataset.foe }, C.ENEMIES[c.dataset.foe]), 0), 0, 0, A.enemy(Object.assign({ key: c.dataset.foe }, C.ENEMIES[c.dataset.foe]), 0).width, A.enemy(Object.assign({ key: c.dataset.foe }, C.ENEMIES[c.dataset.foe]), 0).height, 0, 0, 36, 36); });
   document.querySelectorAll('canvas.petcv').forEach(c => { const x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.clearRect(0, 0, 24, 24); x.drawImage(petSprite(c.dataset.pet, 0), 0, 0); });
   drawHome();
 }
@@ -3391,7 +3688,7 @@ const bossCache = new Map(), _enemyArt = A.enemy;
 A.enemy = function (def, f, mode) {
   const base = _enemyArt(def, f, mode); if (!def.boss || mode) return base;
   const k = def.key + f; if (bossCache.has(k)) return bossCache.get(k);
-  const c = document.createElement('canvas'); c.width = 72; c.height = 72; const x = c.getContext('2d'), col = C.loreOf(def.key).glow;
+  const c = document.createElement('canvas'); c.width = base.width; c.height = base.height; const x = c.getContext('2d'), col = C.loreOf(def.key).glow;
   x.filter = `drop-shadow(0 0 2px ${col}) drop-shadow(0 0 4px ${col})`; x.drawImage(base, 0, 0); x.filter = 'none';
   x.fillStyle = col; for (let i = 0; i < 5; i++) { const px = 14 + ((i * 13 + f * 7) % 44), py = 6 + ((i * 17 + f * 5) % 20); x.fillRect(px, py, 1, 1); }
   bossCache.set(k, c); return c;
@@ -3465,7 +3762,7 @@ function fresh4(D) {
 }
 
 // ================= v5: fighting pets, catching, roster, stable, breeding =================
-TABS.splice(TABS.findIndex(t => t[0] === 'pets') + 1, 0, ['stable', 'Stable', 'hide']);
+// v6: the Stable is a section of the Home tab (12 tabs = 3 tidy rows); setTab('stable') still works
 $('tabs').innerHTML = TABS.map(([id, l, ic]) => `<button data-tab="${id}" id="tab-${id}">${A.iconImg(ic)}<span>${l}</span></button>`).join('');
 const RC5 = r => A.RAR_COL[r] || '#fff';
 const petCv = (p, sz = 32, cls = 'petcv') => `<canvas class="${cls}" data-uid="${p.uid}" width="32" height="32" style="width:${sz}px;height:${sz}px"></canvas>`;
@@ -3572,6 +3869,9 @@ actions = function () {
     if (C.has(S, 'greatsnare')) out.splice(2, 0, btn(`Great ${C.has(S, 'greatsnare')} (${ch('greatsnare')}%)`, () => act('greatsnare'), { id: 'a-gcatch', cls: 'go', dis: B.over || full })); }
   return out;
 };
+const _home6 = XP.home; XP.home = function () { return `<div class="row"><button data-do="hsec|home" class="${homeSec !== 'stable' ? 'on' : ''}" id="sec-home">House</button><button data-do="hsec|stable" class="${homeSec === 'stable' ? 'on' : ''}" id="sec-stable">Stable</button></div>` + (homeSec === 'stable' ? XP.stable() : _home6()); };
+let homeSec = 'home'; DO.hsec = s => { homeSec = s; };
+const _setTab6 = setTab; setTab = function (t) { if (t === 'stable') { homeSec = 'stable'; t = 'home'; } else if (t === 'home' && tab !== 'home') homeSec = 'home'; _setTab6(t); };
 // region level bands on the map panels
 const _li5 = localInfo; localInfo = function () { let h = _li5(); const L = C.curLocal(S), n = C.node(S), s = L.sp[localSel && L.sp[localSel] ? localSel : C.spot(S).id]; if (!S.travel && s && (s.kind === 'hunt' || s.kind === 'cave' || s.kind === 'lair') && n.type === 'zone') { const r = C.zoneRange(S.loc, s.kind === 'cave' ? 3 : s.lvlAdd || 0); h += `<div class="sub">Foes here: <b>L${r[0]}-${r[1]}</b> (fixed for this area)${r[1] + 6 < S.hero.lvl ? ' <span class="muted">- far below Brian, reduced XP</span>' : ''}. Wild pets roam: ${[...new Set(Object.keys(C.PETS).filter(k => !C.PETS[k].legend && C.PETS[k].biomes.includes(n.biome)).map(k => (S.dex || {})[k] ? C.PETS[k].name : '???'))].join(', ')}.</div>`; } return h; };
 const _pm5 = pMap; pMap = function () { let h = _pm5(); if (mapMode !== 'region') return h; const sel = mapSel && C.NODES[mapSel].region === mapRegion ? mapSel : (C.NODES[S.loc].region === mapRegion ? S.loc : null); const n = sel && C.NODES[sel]; if (n && (n.type === 'zone' || n.type === 'dungeon')) { const r = C.zoneSpan(sel); h = h.replace('</h3>', ` <span class="gold">L${r[0]}-${r[1]}</span></h3>`); } return h; };
@@ -3590,7 +3890,7 @@ demo = function (kind) {
     S.pet = 0; C.bagAdd(S, 'snare', 6); C.bagAdd(S, 'greatsnare', 2); C.bagAdd(S, 'petfood', 4);
   }
   if (kind === 'petbattle') { tab = 'pets'; S.opts.auto = false; S.spot = 'a1'; startBattle({ biome: 0, forceWild: 'emberlynx' }); B.e.pet.rar = 'epic'; B.e.hp = Math.round(B.e.maxhp * .45); B.pet.ko = false; battleQ.push({ t: 'pact', k: 'pounce' }, { t: 'dmg', who: 'foe', amt: 14, tags: ['Wolf Pup'] }); }
-  if (kind === 'stable') { tab = 'stable'; S.stable = { plot: 'thornwick:1', train: {}, breed: null, last: Date.now(), eggs: 0 }; S.plots['thornwick:1'] = S.plots['thornwick:1'] || { type: 'shop', slots: 3, clerk: false, sign: 0, stock: [], markup: 1.3, earned: 0, sold: 0, wages: 0 }; C.startTraining(S, S.pets[1].uid, 'atk', 'gold'); C.startTraining(S, S.pets[2].uid, 'spd', 'food'); S.hero.gold += 5000; C.startBreed(S, S.pets[3].uid, S.pets[5].uid); S.stable.breed.start -= 2400e3; petSel = S.pets[0].uid; }
+  if (kind === 'stable') { tab = 'home'; homeSec = 'stable'; S.stable = { plot: 'thornwick:1', train: {}, breed: null, last: Date.now(), eggs: 0 }; S.plots['thornwick:1'] = S.plots['thornwick:1'] || { type: 'shop', slots: 3, clerk: false, sign: 0, stock: [], markup: 1.3, earned: 0, sold: 0, wages: 0 }; C.startTraining(S, S.pets[1].uid, 'atk', 'gold'); C.startTraining(S, S.pets[2].uid, 'spd', 'food'); S.hero.gold += 5000; C.startBreed(S, S.pets[3].uid, S.pets[5].uid); S.stable.breed.start -= 2400e3; petSel = S.pets[0].uid; }
   if (kind === 'roster') tab = 'pets';
   if (kind === 'v5region') { tab = 'map'; S.spot = 'a3'; S.act = 'explore'; }
   render(); save(); return S;
