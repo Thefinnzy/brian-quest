@@ -2967,13 +2967,21 @@ let lastSceneKey = '';
 
 // ---------- battle ----------
 function startBattle(ctx2) {
-  B = C.startBattle(S, Object.assign({ node: S.loc }, ctx2)); battleQ = []; foeDying = 0; autoT = 0; merchant = null;
+  B = C.startBattle(S, Object.assign({ node: S.loc }, ctx2)); battleQ = []; shownHp = null; for (const k in visHp) delete visHp[k]; foeDying = 0; autoT = 0; merchant = null;
   banner = { txt: (B.e.boss ? 'BOSS: ' : '') + B.e.name.toUpperCase(), t: 0 };
   heroAnim = 'idle'; render(); snd(B.e.boss ? 'lvl' : 'ui');
 }
+// HP shown on the bars follows the battle event timeline: C.act resolves the whole round at once,
+// so each bar is driven by the hp carried on each dmg/heal/dot event as it plays, then snaps back to live state.
+let shownHp = null; const visHp = {}; let visT = performance.now();
+function petLiveHp() { const p = B && B.pet && C.petByUid(S, B.pet.uid); return p ? p.hp : 0; }
+function round(a) { shownHp = { foe: B.e.hp, hero: S.hero.hp, pet: petLiveHp() }; const ev = C.act(S, B, a); battleQ.push(...ev); qT = 0; render(); }
+function hpOf(who, live) { return shownHp && shownHp[who] != null ? shownHp[who] : live; }
+function hpVis(who, live) { const t = hpOf(who, live), now = performance.now(); if (visHp[who] == null || !B) visHp[who] = t; else visHp[who] += (t - visHp[who]) * Math.min(1, (now - (visHp[who + 'T'] || now)) / 70); visHp[who + 'T'] = now; if (Math.abs(visHp[who] - t) < .5) visHp[who] = t; return visHp[who]; }
+function hpEvent(e) { if (!shownHp || !e.who || !(e.t === 'dmg' || e.t === 'heal' || e.t === 'dot')) return; const w = e.who === 'pet' ? 'pet' : e.who === 'foe' ? 'foe' : 'hero'; shownHp[w] = e.hp != null ? e.hp : shownHp[w] + (e.t === 'heal' ? e.amt : -e.amt); if (w === 'hero') hud(); }
 function act(a) {
   if (!B || B.over || battleQ.length) return; lastInput = Date.now();
-  const ev = C.act(S, B, a); battleQ.push(...ev); qT = 0; render();
+  round(a);
 }
 const FOE_X = 186, HERO_X = 70;
 function playEvent(e) {
@@ -3048,8 +3056,8 @@ function idleMode() { return S.opts.auto || Date.now() - lastInput > 10000; }
 function step(dt) {
   fishTick(dt);
   if (B) {
-    if (battleQ.length) { qT -= dt; if (qT <= 0) { playEvent(battleQ.shift()); qT = .38; } }
-    else if (!B.over && idleMode()) { autoT += dt; if (autoT > .9) { autoT = 0; battleQ.push(...C.act(S, B, C.autoAction(S, B))); render(); } }
+    if (battleQ.length) { qT -= dt; if (qT <= 0) { const ev = battleQ.shift(); hpEvent(ev); playEvent(ev); qT = .38; if (!battleQ.length) { shownHp = null; hud(); } } }
+    else if (!B.over && idleMode()) { autoT += dt; if (autoT > .9) { autoT = 0; round(C.autoAction(S, B)); } }
     return;
   }
   shopT += dt; if (shopT >= 10) { const r = C.shopTick(S, shopT); shopT = 0; for (const s of r.sales) toast(`Sold ${s.n > 1 ? s.n + ' ' : ''}${esc(s.name)} in ${C.NODES[s.town].name}: +${s.price}g`); if (r.sales.length) snd('coin'); }
@@ -3154,11 +3162,11 @@ function drawHud(t, dt) {
   const n = C.node(S), hs = C.heroStats(S);
   if (B) {
     const e = B.e; panelBox(130, 4, 122, 26); A.text(ctx, e.name.slice(0, 18), 133, 7, e.boss ? '#ffb040' : '#ffffff'); A.text(ctx, 'L' + e.lvl, 249, 7, '#b8c4ff', 'right');
-    bar(133, 17, 116, 4, e.hp, e.maxhp, '#e04848', '#801828');
+    bar(133, 17, 116, 4, hpVis('foe', e.hp), e.maxhp, '#e04848', '#801828');
     const it = C.INTENTS[e.intent], heavy = e.intent === 'slam' || e.intent === 'charge';
     A.text(ctx, (heavy && Math.floor(t * 4) % 2 ? '! ' : '') + it.label.split(' - ')[0].toUpperCase().slice(0, 19), 133, 23, heavy ? '#ff7a5a' : '#ffd860');
     const st = Object.keys(e.st || {}); if (st.length) A.text(ctx, st.join(' ').toUpperCase(), 133, 34, '#c8a0ff');
-    panelBox(4, 4, 96, 16); A.text(ctx, 'BRIAN L' + S.hero.lvl, 7, 6, '#ffffff'); bar(7, 15, 90, 3, S.hero.hp, hs.hp, '#5ad05a', '#2a7a2a');
+    panelBox(4, 4, 96, 16); A.text(ctx, 'BRIAN L' + S.hero.lvl, 7, 6, '#ffffff'); bar(7, 15, 90, 3, hpVis('hero', S.hero.hp), hs.hp, '#5ad05a', '#2a7a2a');
     const hst = Object.keys(B.st || {}); if (hst.length) A.text(ctx, hst.join(' ').toUpperCase(), 7, 24, '#c8a0ff');
   } else {
     const label = S.travel ? 'ROAD TO ' + C.NODES[S.travel.dest].name.toUpperCase() : (S.camp.atCamp ? 'CAMP - ' : '') + n.name.toUpperCase();
@@ -3190,7 +3198,7 @@ function drawFishHud(t) {
 function hud() {
   const hs = C.heroStats(S), h = S.hero;
   const set = (cls, v, max, txt) => { const el = document.querySelector('.bar.' + cls); el.querySelector('i').style.width = Math.max(0, Math.min(100, v / max * 100)) + '%'; el.querySelector('span').textContent = txt; };
-  set('hp', h.hp, hs.hp, `HP ${Math.max(0, Math.round(h.hp))}/${hs.hp}`); set('xp', h.xp, C.need(h.lvl), `LV ${h.lvl}  XP ${Math.floor(h.xp)}/${C.need(h.lvl)}`);
+  const hh = B && typeof hpOf === 'function' ? hpOf('hero', h.hp) : h.hp; set('hp', hh, hs.hp, `HP ${Math.max(0, Math.round(hh))}/${hs.hp}`); set('xp', h.xp, C.need(h.lvl), `LV ${h.lvl}  XP ${Math.floor(h.xp)}/${C.need(h.lvl)}`);
   set('st', S.camp.stamina, 100, `STAMINA ${Math.round(S.camp.stamina)}`); set('mo', S.camp.morale, 100, `MORALE ${Math.round(S.camp.morale)}`);
   $('gold').innerHTML = A.iconImg('coin') + ' ' + fmt(h.gold); $('where').textContent = S.travel ? 'on the road' : C.node(S).name;
   $('mute').textContent = S.opts.mute ? 'SOUND OFF' : 'SOUND ON';
@@ -3857,7 +3865,7 @@ draw = function (dt) {
   petLunge = Math.max(0, petLunge - dt * 4);
   ctx.fillStyle = 'rgba(10,8,20,.35)'; ctx.fillRect(px - 9, GY - 1, 18, 2);
   if (ko) ctx.globalAlpha = .35; ctx.drawImage(A.pet(p, fr, petFlash > 0 ? 'flash' : null), Math.round(px - 16), Math.round(py)); ctx.globalAlpha = 1; petFlash -= dt;
-  if (B) { const s = C.petStats(p), w = 22; ctx.fillStyle = '#0a0a1c'; ctx.fillRect(px - 11, py - 3, w + 2, 4); ctx.fillStyle = ko ? '#555' : '#e05a4a'; ctx.fillRect(px - 10, py - 2, Math.round(w * Math.max(0, p.hp) / s.hp), 2); A.text(ctx, 'L' + p.lvl, px - 12, py - 10, RC5(p.rar)); }
+  if (B) { const s = C.petStats(p), w = 22; ctx.fillStyle = '#0a0a1c'; ctx.fillRect(px - 11, py - 3, w + 2, 4); ctx.fillStyle = ko ? '#555' : '#e05a4a'; ctx.fillRect(px - 10, py - 2, Math.round(w * Math.max(0, hpVis('pet', p.hp)) / s.hp), 2); A.text(ctx, 'L' + p.lvl, px - 12, py - 10, RC5(p.rar)); }
   if (snareFx > 0) { snareFx -= dt; const k = 1 - snareFx; const sx = HERO_X + (FOE_X - HERO_X) * k, sy = GY - 40 - Math.sin(k * Math.PI) * 30; ctx.fillStyle = '#ffd860'; ctx.fillRect(sx - 2, sy - 2, 5, 5); ctx.fillStyle = '#a05a20'; ctx.fillRect(sx - 1, sy - 1, 3, 3); }
   if (B && B.e.pet && !B.over) { const e = B.e; A.text(ctx, e.pet.rar.toUpperCase() + (e.pet.shiny ? ' SHINY' : ''), 249, 34, RC5(e.pet.rar), 'right'); }
 };
@@ -3897,7 +3905,7 @@ demo = function (kind) {
 };
 
 // ---------- test hooks ----------
-window.__bq = { get S() { return S; }, set S(v) { S = v; }, get B() { return B; }, get fish() { return fishMG; }, get tab() { return tab; }, C, A, setTab, render, save, demo: k => demo(k), act, cast, startBattle, step, offline: f => offline(f), travel: id => { DO.travel(id); render(); }, input: () => { lastInput = Date.now(); }, idle: () => { lastInput = 0; }, finish: () => { let n = 0; while (B && !B.over && n++ < 200) battleQ.push(...C.act(S, B, C.autoAction(S, B))); while (battleQ.length) playEvent(battleQ.shift()); } };
+window.__bq = { get S() { return S; }, get battleQ() { return battleQ; }, set S(v) { S = v; }, get B() { return B; }, get fish() { return fishMG; }, get tab() { return tab; }, C, A, setTab, render, save, demo: k => demo(k), act, cast, startBattle, step, offline: f => offline(f), travel: id => { DO.travel(id); render(); }, input: () => { lastInput = Date.now(); }, idle: () => { lastInput = 0; }, finish: () => { let n = 0; while (B && !B.over && n++ < 200) battleQ.push(...C.act(S, B, C.autoAction(S, B))); while (battleQ.length) playEvent(battleQ.shift()); } };
 
 // ---------- boot ----------
 if (!qs.has('fresh')) offline();
