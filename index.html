@@ -106,7 +106,7 @@ C.rnd = rnd; C.pick = pick; C.clamp = clamp;
 C.VERSION = 3;
 
 // ================= TUNING =================
-C.TUNE = { ehp: 1.2, eatk: 2.05, bossHp: .8, bossAtk: 1.15, zoneMult: [1, 1.2, 2.2, 3, 3.8], xpExp: 2,
+C.TUNE = { ehp: 1.2, eatk: 2.05, bossHp: .8, bossAtk: 1.15, zoneMult: [1, 1.35, 2.45, 3.3, 4.1], xpExp: 2,
   travelSecPerPx: .55, travelEncounterPerSec: 1 / 40, offlineRate: .6, shopRate: .045 };
 
 C.RAR = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
@@ -536,6 +536,11 @@ C.readScroll = function (S, key) { const id = key.slice(2); if (!S.bag[key]) ret
 // ================= COMBAT =================
 const mitig = (raw, def, lvl) => raw * (14 + 7 * lvl) / (14 + 7 * lvl + def);
 function enemyIntent(e) { if (e.charged) { e.charged = false; return 'slam'; } const p = e.pattern; let k = p[e.pi % p.length]; e.pi++; if (R() < .2) k = pick(p); return k; }
+// Fixed level band per biome: [base, base+2] plus the local sub-area offset (0 / 2 / 4, caves +3).
+C.regionLvl = (bi, add) => C.BIOMES[bi].lvl + Math.floor(R() * 3) + (add || 0);
+C.regionRange = (bi, add) => [C.BIOMES[bi].lvl + (add || 0), C.BIOMES[bi].lvl + 2 + (add || 0)];
+// XP falloff for foes far below Brian: full XP within 3 levels, -12% per level beyond, floor 10%.
+C.xpScale = (heroL, foeL) => { const d = heroL - foeL; return d <= 3 ? 1 : Math.max(.1, 1 - (d - 3) * .12); };
 C.makeEnemy = function (key, L, biome) {
   const d = C.ENEMIES[key], T = C.TUNE, zf = T.zoneMult[biome] || 1;
   const base = { hp: (46 + 20 * (L - 1)) * T.ehp * zf, atk: (8 + 3 * (L - 1)) * T.eatk * zf, def: 3 + 1.5 * (L - 1), spd: 5 + .4 * (L - 1) };
@@ -547,8 +552,8 @@ C.makeEnemy = function (key, L, biome) {
 C.startBattle = function (S, ctx) {
   const bi = ctx.biome, z = C.BIOMES[bi], zp = S.zones[bi].progress;
   let key = ctx.key || (ctx.boss ? z.boss : pick(z.enemies));
-  let L = ctx.lvl || (ctx.boss ? z.lvl + 3 : z.lvl + Math.min(5, Math.floor(zp / 3)));
-  if (!ctx.boss && !ctx.lvl) L = Math.max(L, Math.min(S.hero.lvl - 1, z.lvl + 7));
+  // v5: enemy level comes from the region (biome base + sub-area offset), never from Brian's level.
+  let L = ctx.lvl || (ctx.boss ? z.lvl + 3 : C.regionLvl(bi, ctx.lvlAdd || 0));
   const e = C.makeEnemy(key, L, bi);
   const fl = C.flags(S);
   return { biome: bi, ctx, e, turn: 0, cd: {}, st: {}, guard: false, over: false, result: null, first: true, extra: fl.haste1 ? 1 : 0 };
@@ -651,7 +656,7 @@ C.win = function (S, B, ev) {
   const e = B.e, hs = C.heroStats(S), bi = B.biome, z = S.zones[bi], ctx = B.ctx;
   B.over = true; B.result = 'win';
   const idle = S._idle ? C.TUNE.offlineRate : 1;
-  const xp = Math.round((20 + e.lvl * 8) * (e.boss ? 4 : 1) * (1 + hs.fx.xp / 100) * idle);
+  const xp = Math.round((20 + e.lvl * 8) * (e.boss ? 4 : 1) * (1 + hs.fx.xp / 100) * idle * (B.ctx.rift ? 1 : C.xpScale(S.hero.lvl, e.lvl)));
   const gold = Math.round(rnd(2, 5) * (1 + e.lvl * .6) * (e.boss ? 5 : 1) * idle);
   S.hero.gold += gold; S.stats.wins++;
   const mats = {}; const addM = (k, n) => { C.bagAdd(S, k, n); mats[k] = (mats[k] || 0) + n; };
@@ -1107,7 +1112,7 @@ const _startBattle = C.startBattle;
 C.startBattle = function (S, ctx) {
   const n = C.NODES[ctx.node || S.loc];
   if (n && n.type === 'zone' && n.lvl && !ctx.boss && !ctx.lvl) ctx = Object.assign({}, ctx, { lvl: n.lvl + Math.floor(R() * 3) + (ctx.lvlAdd || 0), key: ctx.key || pick(n.enemies) });
-  else if (ctx.lvlAdd && !ctx.lvl) { const z = C.BIOMES[ctx.biome]; ctx = Object.assign({}, ctx, { lvl: Math.max(z.lvl + Math.min(5, Math.floor(S.zones[ctx.biome].progress / 3)), Math.min(S.hero.lvl - 1, z.lvl + 7)) + ctx.lvlAdd }); }
+  else if (ctx.lvlAdd && !ctx.lvl) ctx = Object.assign({}, ctx, { lvl: C.regionLvl(ctx.biome, ctx.lvlAdd) });
   return _startBattle(S, ctx);
 };
 const _win = C.win;
@@ -1441,7 +1446,7 @@ const _win = C.win;
 C.win = function (S, B, ev) {
   const e = B.e; S.kills = S.kills || {}; S.kills[e.key] = (S.kills[e.key] || 0) + 1;
   if (B.pack && B.pack.length) { // next packmate steps up
-    const xp = Math.round((10 + e.lvl * 4) * (1 + (S.stars || 0) * .08)); S.stats.wins++; C.gainXp(S, xp, ev); S.hero.gold += Math.round(2 + e.lvl * .8);
+    const xp = Math.round((10 + e.lvl * 4) * (1 + (S.stars || 0) * .08) * (B.ctx.rift ? 1 : C.xpScale(S.hero.lvl, e.lvl))); S.stats.wins++; C.gainXp(S, xp, ev); S.hero.gold += Math.round(2 + e.lvl * .8);
     const key = B.pack.shift(), ne = C.makeEnemy(key, e.lvl, B.biome); B.e = ne; applySyn(B); ev.push({ t: 'next', name: ne.name, xp, syn: B.syn && B.syn.name }); return ev;
   }
   const inv0 = S.inv.length, fx = C.worldFx(S), stars = S.stars || 0, rest = S.restXp || 0;
@@ -1583,6 +1588,267 @@ C.simulate = function (S, ms, opts = {}) {
   const sum = _sim(S, ms, opts); sum.pet = pg; sum.house = hg; C.questCheck(S); C.achCheck(S); return sum;
 };
 
+if (typeof module !== 'undefined' && module.exports) module.exports = C;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script><script>
+// Brian Quest v5: pets that fight, procedural pet collecting (species x IVs x traits x colors x rarity),
+// wild pet encounters + catching, the Stable (training, breeding) on a town plot.
+// DOM-free: shared by the page and node sim.js. Extends the core object after extra.js.
+(function (root) {
+const C = typeof module !== 'undefined' && module.exports && typeof require === 'function' && !root.BQ ? require('./extra.js') : root.BQ;
+const R = Math.random, pick = a => a[Math.floor(R() * a.length)], clamp = (v, a, b) => Math.max(a, Math.min(b, v)), ri = (a, b) => a + Math.floor(R() * (b - a + 1));
+C.PETS5 = 1;
+
+// ---------- data ----------
+C.PET_RAR = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+C.PET_RMULT = { common: 1, uncommon: 1.08, rare: 1.18, epic: 1.3, legendary: 1.5 };
+C.PET_EL = { beast: '#c8a070', fire: '#ff8a40', frost: '#8ad0ff', nature: '#7ad860', shadow: '#b080ff', storm: '#ffe060' };
+// abilities: mult = x pet attack; el = damage element; st = [status, chance]; heal = % of Brian's max HP; shield = next hit on Brian reduced; drain = % of damage back to pet
+C.PET_ABIL = {
+  bite: { name: 'Bite', mult: 1, cd: 0, desc: 'Basic bite.' },
+  pounce: { name: 'Pounce', mult: 1.7, cd: 3, desc: '170% damage.' },
+  gore: { name: 'Gore', mult: 1.4, cd: 3, st: ['bleed', .5], desc: '140%, may bleed.' },
+  peck: { name: 'Peck', mult: 1, cd: 0, desc: 'Basic peck.' },
+  ember: { name: 'Ember', mult: 1.2, el: 'fire', cd: 2, st: ['burn', .4], desc: 'Fire 120%, may burn.' },
+  inferno: { name: 'Inferno', mult: 2.4, el: 'fire', cd: 5, desc: 'Fire 240%.' },
+  frostbite: { name: 'Frostbite', mult: 1.15, el: 'frost', cd: 3, st: ['stun', .25], desc: 'Frost 115%, may freeze.' },
+  blizzard: { name: 'Blizzard', mult: 2, el: 'frost', cd: 5, st: ['stun', .4], desc: 'Frost 200%, may freeze.' },
+  shock: { name: 'Shock', mult: 1.3, el: 'storm', cd: 2, st: ['stun', .12], desc: 'Storm 130%, may stun.' },
+  spit: { name: 'Venom Spit', mult: .8, el: 'nature', cd: 3, st: ['poison', .9], desc: '80%, poisons.' },
+  drain: { name: 'Life Drain', mult: 1.1, el: 'shadow', cd: 3, drain: .6, desc: 'Shadow 110%, heals itself.' },
+  mend: { name: 'Mend', heal: .09, cd: 4, desc: 'Heals Brian 9% max HP.' },
+  guard: { name: 'Guard', shield: .5, cd: 4, desc: 'Halves the next hit on Brian.' },
+  howl: { name: 'Howl', buff: .25, cd: 99, desc: 'Pet +25% attack this fight.' },
+};
+// species templates. body = sprite plan. biomes = where wild ones roam. rar = lowest rarity they roll.
+C.PETS = {
+  pup: { name: 'Farm Pup', el: 'beast', body: 'quad', col: '#b07a48', base: { hp: 40, atk: 9, def: 4, spd: 7 }, ab: ['bite', 'guard'], biomes: [0], rar: 'common', how: 'Starter pet; also roams the Vale' },
+  wolfpup: { name: 'Wolf Pup', el: 'beast', body: 'quad', col: '#8a8c9c', base: { hp: 36, atk: 10, def: 4, spd: 8 }, ab: ['bite', 'pounce'], biomes: [0, 3], rar: 'common', how: 'Wild in the Vale and Frostveil' },
+  boarlet: { name: 'Boarlet', el: 'beast', body: 'quad', col: '#7a5038', base: { hp: 46, atk: 9, def: 6, spd: 5 }, ab: ['bite', 'gore'], biomes: [0], rar: 'common', how: 'Wild in the Vale' },
+  owl: { name: 'Night Owl', el: 'shadow', body: 'bird', col: '#8a6a4a', base: { hp: 30, atk: 9, def: 3, spd: 10 }, ab: ['peck', 'mend'], biomes: [0, 1], rar: 'uncommon', luck: 5, how: 'Wild in the Vale and Marsh, or from eggs' },
+  toadling: { name: 'Bog Toad', el: 'nature', body: 'toad', col: '#5a8a3a', base: { hp: 44, atk: 8, def: 5, spd: 5 }, ab: ['bite', 'spit'], biomes: [1], rar: 'common', how: 'Wild in the Ashen Marsh' },
+  otter: { name: 'River Otter', el: 'frost', body: 'quad', col: '#6a4a32', base: { hp: 38, atk: 9, def: 4, spd: 9 }, ab: ['bite', 'frostbite'], biomes: [1], rar: 'uncommon', gather: 'fish', how: 'Wild in the Marsh. Brings fish.' },
+  fox: { name: 'Marsh Fox', el: 'nature', body: 'quad', col: '#d0702a', base: { hp: 34, atk: 10, def: 3, spd: 10 }, ab: ['bite', 'spit'], biomes: [1, 3], rar: 'uncommon', gather: 'herb', how: 'Wild in the Marsh and Frostveil. Digs herbs.' },
+  mole: { name: 'Cave Mole', el: 'beast', body: 'blob', col: '#6a5a6a', base: { hp: 42, atk: 8, def: 7, spd: 4 }, ab: ['bite', 'guard'], biomes: [2], rar: 'uncommon', gather: 'ore', egg: 1, how: 'Eggs, or wild on Emberpeak. Digs ore.' },
+  drakeling: { name: 'Drakeling', el: 'fire', body: 'drake', col: '#c84a2a', base: { hp: 40, atk: 12, def: 5, spd: 7 }, ab: ['ember', 'inferno'], biomes: [2], rar: 'rare', egg: 1, how: 'Eggs, or rare on Emberpeak' },
+  sparkbat: { name: 'Spark Bat', el: 'storm', body: 'bird', col: '#4a4a7a', base: { hp: 30, atk: 11, def: 3, spd: 12 }, ab: ['peck', 'shock'], biomes: [2, 3], rar: 'uncommon', how: 'Wild on Emberpeak and Frostveil' },
+  emberlynx: { name: 'Ember Lynx', el: 'fire', body: 'quad', col: '#e0903a', base: { hp: 38, atk: 13, def: 4, spd: 10 }, ab: ['pounce', 'ember'], biomes: [2], rar: 'rare', how: 'Rare on Emberpeak and the Isles' },
+  frosthare: { name: 'Frost Hare', el: 'frost', body: 'quad', col: '#d8e4f0', base: { hp: 34, atk: 10, def: 4, spd: 12 }, ab: ['bite', 'frostbite'], biomes: [3], rar: 'uncommon', how: 'Wild in Frostveil Reach' },
+  pebble: { name: 'Pebble Golem', el: 'beast', body: 'blob', col: '#8a8478', base: { hp: 56, atk: 9, def: 9, spd: 3 }, ab: ['bite', 'guard'], biomes: [2, 4], rar: 'uncommon', how: 'Wild on Emberpeak and in the Crypt' },
+  wisp: { name: 'Grave Wisp', el: 'shadow', body: 'orb', col: '#7a5ac8', base: { hp: 32, atk: 12, def: 4, spd: 9 }, ab: ['drain', 'mend'], biomes: [4], rar: 'rare', how: 'Rare in the Hollow Crypt and Highmarch' },
+  // legendaries: only in the hardest regions, tiny spawn rate, low catch rate, cannot breed
+  phoenix: { name: 'Cinder Phoenix', el: 'fire', body: 'bird', col: '#ff6a20', base: { hp: 52, atk: 17, def: 7, spd: 12 }, ab: ['inferno', 'mend'], biomes: [3, 4], rar: 'legendary', legend: 1, how: 'Legendary. Frostveil and beyond, very rare.' },
+  aurorwyrm: { name: 'Aurorwyrm', el: 'frost', body: 'drake', col: '#60d0e0', base: { hp: 58, atk: 16, def: 8, spd: 9 }, ab: ['blizzard', 'guard'], biomes: [3, 4], rar: 'legendary', legend: 1, how: 'Legendary. Frostveil and beyond, very rare.' },
+  hollowstag: { name: 'Hollow Stag', el: 'shadow', body: 'quad', col: '#5a4a7a', base: { hp: 60, atk: 15, def: 9, spd: 10 }, ab: ['drain', 'howl'], biomes: [4], rar: 'legendary', legend: 1, how: 'Legendary. Hollow Crypt and Highmarch, very rare.' },
+};
+for (const d of Object.values(C.PETS)) { const a = C.PET_ABIL[d.ab[1]]; d.ability = C.PET_ABIL[d.ab[0]].name + ' / ' + a.name; d.desc = a.desc; }
+C.TRAITS = {
+  brave: { name: 'Brave', desc: '+10% attack', m: { atk: 1.1 } }, sturdy: { name: 'Sturdy', desc: '+12% defense', m: { def: 1.12 } },
+  swift: { name: 'Swift', desc: '+12% speed', m: { spd: 1.12 } }, hardy: { name: 'Hardy', desc: '+12% HP', m: { hp: 1.12 } },
+  fierce: { name: 'Fierce', desc: '12% crit chance', crit: .12 }, loyal: { name: 'Loyal', desc: 'Shields Brian more often', cover: .15 },
+  lucky: { name: 'Lucky', desc: '+3 luck for Brian', luck: 3 }, gentle: { name: 'Gentle', desc: 'Healing +40%', healM: 1.4 },
+  glutton: { name: 'Glutton', desc: 'Food training x2', food: 2 }, fertile: { name: 'Fertile', desc: 'Breeds 40% faster', breed: .6 },
+  quick: { name: 'Quick Learner', desc: '+30% pet XP', xp: 1.3 }, mighty: { name: 'Mighty', desc: '+8% all stats', m: { hp: 1.08, atk: 1.08, def: 1.08, spd: 1.08 }, rare: 1 },
+};
+C.COLORS = [['Normal', 0, 0], ['Dusk', 250, 0], ['Moss', 90, 0], ['Ember', 330, .1], ['Frost', 190, -.05], ['Gilded', 40, .15], ['Void', 270, -.25]];
+C.ROSTER_MAX = 40; C.PET_MAX = 50; C.PET_STATS = ['hp', 'atk', 'def', 'spd'];
+C.petNeed = l => 12 + l * l * 2;
+const uid = () => 'p' + Date.now().toString(36) + Math.floor(R() * 1e6).toString(36);
+
+// ---------- making pets ----------
+C.rollPetRarity = (tier, floor) => { // tier 0..4 = region difficulty
+  const w = [70 - tier * 8, 22 + tier * 2, 6 + tier * 3, 1.6 + tier * 1.4, tier >= 3 ? .05 : 0]; const f = C.PET_RAR.indexOf(floor || 'common');
+  let tot = 0; for (let i = f; i < 5; i++) tot += w[i]; let r = R() * tot; for (let i = f; i < 5; i++) { r -= w[i]; if (r <= 0) return C.PET_RAR[i]; } return C.PET_RAR[f];
+};
+C.makePet = function (sp, o = {}) {
+  const d = C.PETS[sp]; const iv = {}; for (const k of C.PET_STATS) iv[k] = o.iv ? o.iv[k] : ri(0, 31);
+  const tk = Object.keys(C.TRAITS).filter(k => !C.TRAITS[k].rare || R() < .25);
+  let col = o.col != null ? o.col : (R() < .82 ? 0 : ri(1, C.COLORS.length - 1)); const shiny = o.shiny != null ? o.shiny : R() < 1 / 512;
+  const rar = d.legend ? 'legendary' : (o.rar || C.rollPetRarity(o.tier || 0, d.rar));
+  const p = { uid: uid(), id: sp, name: o.name || d.name, rar, lvl: o.lvl || 1, xp: o.xp || 0, iv, trait: o.trait || pick(tk), col, shiny, seed: o.seed != null ? o.seed : Math.floor(R() * 1e9), train: { hp: 0, atk: 0, def: 0, spd: 0 }, gen: o.gen || 0 };
+  if (o.parents) p.parents = o.parents; p.hp = C.petStats(p).hp; return p;
+};
+C.ivPct = p => Math.round(C.PET_STATS.reduce((a, k) => a + p.iv[k], 0) / 124 * 100);
+C.petStats = function (p) {
+  const d = C.PETS[p.id] || C.PETS.pup, t = C.TRAITS[p.trait] || {}, rm = C.PET_RMULT[p.rar] || 1, L = p.lvl, s = {};
+  const grow = { hp: .42, atk: .3, def: .3, spd: .12 };
+  for (const k of C.PET_STATS) s[k] = Math.round(d.base[k] * (1 + grow[k] * (L - 1)) * (1 + p.iv[k] / 31 * .25) * rm * ((t.m && t.m[k]) || 1) + (p.train[k] || 0) * (k === 'hp' ? 4 : 1) * (1 + L * .05));
+  s.el = d.el; s.crit = .05 + (t.crit || 0); return s;
+};
+C.petPower = p => { const s = C.petStats(p); return Math.round(s.hp / 4 + s.atk * 2 + s.def * 1.5 + s.spd); };
+
+// ---------- roster ----------
+const LEGR = { wolfpup: 'uncommon', fox: 'uncommon', otter: 'uncommon', mole: 'uncommon', owl: 'rare', drakeling: 'rare' };
+C.normPet = p => { if (p && !p.uid && C.PETS[p.id]) { const n = C.makePet(p.id, { lvl: p.lvl || 1, xp: p.xp || 0, rar: LEGR[p.id] || 'common', col: 0, shiny: false }); Object.assign(p, n, { lvl: p.lvl || 1, xp: p.xp || 0 }); } return p; };
+C.activePet = S => C.normPet((S.pets || [])[S.pet ?? -1] || null);
+C.addPetObj = (S, p) => { S.pets = S.pets || []; if (S.pets.length >= C.ROSTER_MAX) return false; S.pets.push(p); S.dex = S.dex || {}; S.dex[p.id] = 1; if (S.pet == null || S.pet < 0) S.pet = S.pets.length - 1; C.log(S, `New pet: ${p.name} (${p.rar} ${C.PETS[p.id].name})!`, p.rar); return true; };
+C.addPet = (S, id, o) => { const p = C.makePet(id, o); return C.addPetObj(S, p) ? p : false; };
+C.releasePet = (S, i) => { const p = S.pets[i]; if (!p || S.pets.length <= 1) return false; if (S.stable && (S.stable.train[p.uid] || (S.stable.breed && (S.stable.breed.a === p.uid || S.stable.breed.b === p.uid)))) return false; const act = C.activePet(S); S.pets.splice(i, 1); S.pet = act && act !== p ? S.pets.indexOf(act) : -1; C.bagAdd(S, 'petfood', 2); return true; };
+C.petByUid = (S, u) => (S.pets || []).find(p => p.uid === u);
+C.petCap = S => Math.min(C.PET_MAX, S.hero.lvl + 2); // pets can't outgrow Brian by more than 2 levels
+C.petXp = (S, x, p) => { p = p || C.activePet(S); if (!p || p.lvl >= C.petCap(S)) return; p.xp += Math.round(x * ((C.TRAITS[p.trait] || {}).xp || 1)); while (p.lvl < C.petCap(S) && p.xp >= C.petNeed(p.lvl)) { p.xp -= C.petNeed(p.lvl); p.lvl++; p.hp = C.petStats(p).hp; C.log(S, `${p.name} grows to level ${p.lvl}.`, 'lvl'); } };
+C.hatch = S => { if (!C.has(S, 'petegg') || (S.pets || []).length >= C.ROSTER_MAX) return null; C.bagAdd(S, 'petegg', -1); const sp = pick(Object.keys(C.PETS).filter(k => !C.PETS[k].legend && (C.PETS[k].egg || R() < .3))); const p = C.addPet(S, sp, { tier: 2 }); return p ? p.id : null; };
+C.PET_FOOD = 'petfood';
+C.MATS.snare = { name: 'Snare', icon: 'gem', tint: 'grey', value: 15 }; C.MATS.greatsnare = { name: 'Great Snare', icon: 'gem', tint: 'blue', value: 120 };
+C.MATS.petfood = { name: 'Pet Treat', icon: 'food', tint: 'gold', value: 10 };
+const SHOP5 = { snare: 30, greatsnare: 260, petfood: 20 }; C.PET_SHOP = SHOP5;
+const _bn = C.bagName; C.bagName = k => SHOP5[k] != null ? C.MATS[k].name : _bn(k);
+const _bv = C.bagValue; C.bagValue = k => SHOP5[k] != null ? C.MATS[k].value : _bv(k);
+const _bc = C.bagCat; C.bagCat = k => SHOP5[k] != null ? 'mat' : _bc(k);
+C.buyPetItem = (S, k, n = 1) => { const c = SHOP5[k] * n; if (!c || S.hero.gold < c) return false; S.hero.gold -= c; C.bagAdd(S, k, n); return true; };
+
+// ---------- combat ----------
+C.WILD_CH = .1; C.LEGEND_CH = .006;
+C.rollWild = function (bi) {
+  if (bi >= 3 && R() < C.LEGEND_CH) { const ls = Object.keys(C.PETS).filter(k => C.PETS[k].legend && C.PETS[k].biomes.includes(bi)); if (ls.length) return pick(ls); }
+  const pool = Object.keys(C.PETS).filter(k => !C.PETS[k].legend && C.PETS[k].biomes.includes(Math.min(4, bi)));
+  const w = pool.map(k => ({ common: 6, uncommon: 3, rare: 1 })[C.PETS[k].rar] || 1); let r = R() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0) return pool[i]; } return pool[0] || 'pup';
+};
+const _start = C.startBattle;
+C.startBattle = function (S, ctx) {
+  const n = C.NODES[ctx.node || S.loc], wildOk = !ctx.boss && !ctx.key && !ctx.lvl && !ctx.rift && !ctx.dungeon && !ctx.cave && ctx.wild !== false && (S.travel || (n && n.type === 'zone'));
+  let wild = null; if (ctx.forceWild || (wildOk && R() < C.WILD_CH)) wild = ctx.forceWild || C.rollWild(ctx.biome);
+  const B = _start(S, wild ? Object.assign({}, ctx, { pack: 0 }) : ctx);
+  if (wild) { // reskin the rolled foe as a wild pet; it keeps the region's level and roughly a normal fight's strength
+    const e = B.e, p = C.makePet(wild, { lvl: e.lvl, tier: ctx.biome }), leg = p.rar === 'legendary', rm = C.PET_RMULT[p.rar];
+    e.pet = p; e.name = 'Wild ' + C.PETS[wild].name; e.maxhp = Math.round(e.maxhp * .85 * rm * (leg ? 1.6 : 1)); e.hp = e.maxhp; e.atk = Math.round(e.atk * .8 * rm * (leg ? 1.25 : 1)); e.def = Math.round(e.def * rm); e.weak = []; e.resist = [];
+    const el = C.PETS[wild].el; if (el === 'fire') { e.weak = ['frost']; e.resist = ['fire']; } else if (el === 'frost') { e.weak = ['fire']; e.resist = ['frost']; } else if (el === 'nature' || el === 'beast') e.weak = ['fire'];
+    B.pack = null; B.syn = null; B.wild = 1;
+  }
+  const p = C.activePet(S); if (p) { const ps = C.petStats(p); if (p.hp == null || p.hp > ps.hp) p.hp = ps.hp; B.pet = { uid: p.uid, cd: {}, buff: 0, ko: p.hp <= 0, shield: 0 }; }
+  return B;
+};
+C.catchChance = function (S, B, k = 'snare') {
+  const e = B.e; if (!e.pet) return 0; const base = { common: .6, uncommon: .42, rare: .26, epic: .12, legendary: .035 }[e.pet.rar];
+  const hpF = Math.max(0, e.hp) / e.maxhp; let c = base * (1.55 - hpF * 1.3) * (k === 'greatsnare' ? 1.7 : 1) * (e.st && e.st.stun ? 1.3 : 1) * (1 + Math.min(20, S.hero.lvl - e.lvl > 0 ? 0 : 0));
+  return clamp(c, .01, e.pet.rar === 'legendary' ? .25 : .95);
+};
+function petAct(S, B, ev) {
+  const p = C.petByUid(S, B.pet && B.pet.uid); if (!p || B.pet.ko || B.over) return; const e = B.e, ps = C.petStats(p), tr = C.TRAITS[p.trait] || {}, d = C.PETS[p.id], st = B.pet;
+  for (const k in st.cd) if (st.cd[k] > 0) st.cd[k]--;
+  let ab = d.ab.slice().reverse().find(k => !st.cd[k] && (!C.PET_ABIL[k].heal || S.hero.hp < C.heroStats(S).hp * .6) && (!C.PET_ABIL[k].buff || !st.buff) && (!C.PET_ABIL[k].shield || !st.shield)) || d.ab[0];
+  let a = C.PET_ABIL[ab]; if (a.heal && S.hero.hp >= C.heroStats(S).hp * .6) { ab = d.ab[0]; a = C.PET_ABIL[ab]; }
+  st.cd[ab] = a.cd; ev.push({ t: 'pact', k: ab, name: p.name });
+  if (a.heal) { const hs = C.heroStats(S), h = Math.round(hs.hp * a.heal * (tr.healM || 1)); S.hero.hp = Math.min(hs.hp, S.hero.hp + h); ev.push({ t: 'heal', who: 'hero', amt: h, hp: S.hero.hp, tags: [p.name] }); }
+  if (a.shield) { st.shield = a.shield; ev.push({ t: 'msg', m: p.name + ' guards', who: 'pet' }); }
+  if (a.buff) { st.buff = a.buff; ev.push({ t: 'msg', m: p.name + ' howls', who: 'pet' }); }
+  if (!a.mult) { if (a.heal || a.shield || a.buff) ab = d.ab[0], a = C.PET_ABIL[ab]; else return; if (C.PET_ABIL[d.ab[1]].heal || C.PET_ABIL[d.ab[1]].shield || C.PET_ABIL[d.ab[1]].buff) a = { mult: .6, el: C.PET_ABIL[d.ab[0]].el }; } // support turns still nip for 60%
+  let raw = ps.atk * a.mult * (1 + st.buff); const el = a.el || 'phys', tags = [];
+  if (e.weak.includes(el)) { raw *= 1.5; tags.push('WEAK'); } else if (e.resist.includes(el)) { raw *= .6; tags.push('resist'); }
+  if (C.INTENTS[e.intent] && C.INTENTS[e.intent].guard) raw *= .5;
+  const crit = R() < ps.crit; if (crit) raw *= 1.6;
+  const dmg = Math.max(1, Math.round(raw * (14 + 7 * e.lvl) / (14 + 7 * e.lvl + e.def) * (.9 + R() * .2)));
+  e.hp -= dmg; ev.push({ t: 'dmg', who: 'foe', amt: dmg, el, crit, tags: tags.length ? tags : [p.name], pet: 1, hp: Math.max(0, e.hp) });
+  if (a.drain) { const h = Math.round(dmg * a.drain); p.hp = Math.min(ps.hp, p.hp + h); }
+  if (a.st && e.hp > 0 && R() < a.st[1]) { const k = a.st[0]; e.st = e.st || {}; if (k === 'stun') e.st.stun = 1; else if (k === 'poison') e.st.poison = Math.min(8, (e.st.poison || 0) + 2); else e.st[k] = { turns: 3, dmg: Math.max(1, Math.round(ps.atk * (k === 'burn' ? .3 : .25))) }; ev.push({ t: 'status', who: 'foe', s: k }); }
+}
+const _act = C.act;
+C.act = function (S, B, a) {
+  if (a === 'catch' || a === 'greatsnare') return C.tryCatch(S, B, a === 'catch' ? 'snare' : 'greatsnare');
+  const hp0 = S.hero.hp, ev = _act(S, B, a); if (B.over) return ev;
+  const p = B.pet && C.petByUid(S, B.pet.uid);
+  if (p && !B.pet.ko) { // pet covers or shields the enemy's hit on Brian
+    const hit = ev.find(x => x.t === 'dmg' && x.who === 'hero' && !(x.tags || []).includes('thorns'));
+    if (hit) {
+      const ps = C.petStats(p), tr = C.TRAITS[p.trait] || {};
+      if (B.pet.shield) { const back = Math.round(hit.amt * B.pet.shield); S.hero.hp += back; hit.amt -= back; hit.hp = S.hero.hp; (hit.tags = hit.tags || []).push('shielded'); B.pet.shield = 0; }
+      else if (R() < .15 + (tr.cover || 0)) { const amt = hit.amt; S.hero.hp = Math.min(C.heroStats(S).hp, S.hero.hp + amt); const pd = Math.max(1, Math.round(amt * (14 + 7 * p.lvl) / (14 + 7 * p.lvl + ps.def * 2))); p.hp -= pd; hit.who = 'pet'; hit.amt = pd; hit.hp = Math.max(0, p.hp); hit.name = p.name; if (p.hp <= 0) { p.hp = 0; B.pet.ko = true; ev.push({ t: 'msg', m: p.name + ' is knocked out', who: 'pet' }); } }
+    }
+    petAct(S, B, ev);
+  }
+  if (B.e.hp <= 0 && !B.over) return C.win(S, B, ev);
+  return ev;
+};
+C.tryCatch = function (S, B, k) {
+  const ev = []; if (B.over || !B.e.pet || !C.has(S, k) || (S.pets || []).length >= C.ROSTER_MAX) return ev;
+  C.bagAdd(S, k, -1); const ch = C.catchChance(S, B, k); ev.push({ t: 'hact', k: 'guard', snare: k });
+  if (R() < ch) {
+    const p = B.e.pet; p.lvl = B.e.lvl; p.hp = C.petStats(p).hp; C.addPetObj(S, p); B.over = true; B.result = 'caught'; S.stats.caught = (S.stats.caught || 0) + 1;
+    const xp = Math.round((20 + B.e.lvl * 8) * .6 * C.xpScale(S.hero.lvl, B.e.lvl)); C.gainXp(S, xp, ev);
+    C.log(S, `Caught ${p.name} (${p.rar}, ${C.ivPct(p)}% potential)!`, p.rar === 'legendary' ? 'legendary' : 'epic');
+    ev.push({ t: 'end', result: 'caught', pet: p.uid, xp, gold: 0 }); return ev;
+  }
+  ev.push({ t: 'msg', m: 'It broke free!', who: 'foe' });
+  const ev2 = _act(S, B, 'guard'); // Brian spent the turn throwing; the foe answers (guard posture only halves it a bit)
+  return ev.concat(ev2.filter(x => x.t !== 'hact'));
+};
+// after a fight: pet XP, a bit of pet healing; snare drops; rest the party in towns and camps
+const _win = C.win;
+C.win = function (S, B, ev) {
+  const out = _win(S, B, ev); const end = out.find(x => x.t === 'end'); const p = C.activePet(S);
+  if (end && p) { const x = Math.round((4 + B.e.lvl * 2) * (B.e.boss ? 4 : 1) * C.xpScale(p.lvl, B.e.lvl)); C.petXp(S, x, p); end.petxp = x; const ps = C.petStats(p); p.hp = Math.min(ps.hp, Math.max(p.hp, 0) + Math.round(ps.hp * .3)); }
+  if (end && R() < (B.e.boss ? .5 : .04)) { C.bagAdd(S, 'snare', 1); end.snare = 1; }
+  return out;
+};
+const _lose = C.lose; C.lose = function (S, B, ev) { const r = _lose(S, B, ev); const p = C.activePet(S); if (p) p.hp = Math.round(C.petStats(p).hp * .3); return r; };
+const healAll = S => { for (const p of S.pets || []) p.hp = C.petStats(p).hp; };
+const _inn = C.innRest; C.innRest = function (S) { const r = _inn(S); if (r) healAll(S); return r; };
+const _camp = C.campTick; C.campTick = function (S, sec) { const r = _camp(S, sec); for (const p of S.pets || []) { const m = C.petStats(p).hp; p.hp = Math.min(m, (p.hp || 0) + Math.ceil(m * sec / 600)); } return r; };
+const _auto = C.autoAction; C.autoAction = function (S, B) { // auto battle throws a snare at a weakened wild pet worth keeping
+  const e = B.e; if (e.pet && S.opts && S.opts.autoCatch !== false && (S.pets || []).length < C.ROSTER_MAX && e.hp < e.maxhp * .4) { const k = C.has(S, 'greatsnare') && C.PET_RAR.indexOf(e.pet.rar) >= 2 ? 'greatsnare' : C.has(S, 'snare') ? 'snare' : null; if (k && (C.PET_RAR.indexOf(e.pet.rar) >= 1 || !(S.pets || []).some(x => x.id === e.pet.id))) return k === 'snare' ? 'catch' : 'greatsnare'; }
+  return _auto(S, B);
+};
+// pet trait luck
+const _hs = C.heroStats; C.heroStats = function (S) { const s = _hs(S), p = C.activePet(S); if (p && C.TRAITS[p.trait] && C.TRAITS[p.trait].luck) s.luck += C.TRAITS[p.trait].luck; return s; };
+
+// ---------- stable ----------
+C.STABLE_COST = 2000; C.TRAIN_SEC = 1800; C.BREED_SEC = 2 * 3600; C.TRAIN_CAP = 30;
+C.buildStable = function (S, plot) { if (!S.plots[plot] || S.stable || S.hero.gold < C.STABLE_COST) return false; S.hero.gold -= C.STABLE_COST; S.stable = { plot, train: {}, breed: null, last: Date.now(), eggs: 0 }; C.log(S, `Brian builds a Stable on his plot in ${C.NODES[plot.split(':')[0]].name}.`, 'epic'); return true; };
+C.trainCost = p => 40 + p.lvl * 15;
+C.canTrain = (S, p, stat) => S.stable && p && !S.stable.train[p.uid] && (p.train[stat] || 0) < C.TRAIN_CAP && Object.keys(S.stable.train).length < 3;
+C.startTraining = function (S, uidv, stat, pay) {
+  const p = C.petByUid(S, uidv); if (!C.canTrain(S, p, stat) || !C.PET_STATS.includes(stat)) return false;
+  let pts = 2; if (pay === 'food') { if (!C.has(S, 'petfood')) return false; C.bagAdd(S, 'petfood', -1); pts = 3 * ((C.TRAITS[p.trait] || {}).food || 1); } else { const c = C.trainCost(p); if (S.hero.gold < c) return false; S.hero.gold -= c; }
+  S.stable.train[p.uid] = { stat, pts, until: Date.now() + C.TRAIN_SEC * 1000 }; return true;
+};
+C.breedCost = (a, b) => 300 + Math.round((a.lvl + b.lvl) * 12);
+C.breedSec = (a, b) => Math.round(C.BREED_SEC * Math.min((C.TRAITS[a.trait] || {}).breed || 1, (C.TRAITS[b.trait] || {}).breed || 1));
+C.canBreed = (S, a, b) => !!(S.stable && a && b && a !== b && !S.stable.breed && a.lvl >= 5 && b.lvl >= 5 && !C.PETS[a.id].legend && !C.PETS[b.id].legend && (S.pets || []).length < C.ROSTER_MAX);
+C.startBreed = function (S, ua, ub) { const a = C.petByUid(S, ua), b = C.petByUid(S, ub); if (!C.canBreed(S, a, b)) return false; const c = C.breedCost(a, b); if (S.hero.gold < c) return false; S.hero.gold -= c; S.stable.breed = { a: ua, b: ub, start: Date.now(), until: Date.now() + C.breedSec(a, b) * 1000 }; C.log(S, `${a.name} and ${b.name} settle into the breeding stall.`); return true; };
+C.breedChild = function (a, b) {
+  const sp = R() < .5 ? a.id : b.id, iv = {};
+  for (const k of C.PET_STATS) iv[k] = R() < .15 ? ri(0, 31) : clamp((R() < .5 ? a.iv[k] : b.iv[k]) + ri(-3, 3), 0, 31);
+  const ra = C.PET_RAR.indexOf(a.rar), rb = C.PET_RAR.indexOf(b.rar); let r = R() < .5 ? Math.min(ra, rb) : Math.max(ra, rb); let upgraded = false, mutated = false;
+  if (R() < .08 && r < 3) { r++; upgraded = true; } else if (r === 3 && ra === 3 && rb === 3 && R() < .015) { r = 4; upgraded = true; }
+  let trait = R() < .7 ? (R() < .5 ? a.trait : b.trait) : pick(Object.keys(C.TRAITS)); let col = R() < .5 ? a.col : b.col, shiny = (a.shiny && b.shiny) ? R() < .5 : false;
+  if (R() < .06) { mutated = true; trait = pick(Object.keys(C.TRAITS)); col = ri(1, C.COLORS.length - 1); const k = pick(C.PET_STATS); iv[k] = Math.min(31, iv[k] + 8); if (R() < .05) shiny = true; }
+  const p = C.makePet(sp, { iv, rar: C.PET_RAR[r], trait, col, shiny, gen: Math.max(a.gen || 0, b.gen || 0) + 1, parents: [a.name, b.name] });
+  if (C.PETS[sp].legend) p.rar = 'legendary'; p.upgraded = upgraded; p.mutated = mutated; return p;
+};
+C.stableTick = function (S, now = Date.now()) {
+  const st = S.stable; if (!st) return null; const out = { trained: [], child: null }; const dt = Math.max(0, Math.min(7 * 86400, (now - (st.last || now)) / 1000)); st.last = now;
+  for (const [u, t] of Object.entries(st.train)) if (now >= t.until) { const p = C.petByUid(S, u); delete st.train[u]; if (!p) continue; p.train[t.stat] = Math.min(C.TRAIN_CAP, (p.train[t.stat] || 0) + t.pts); out.trained.push({ name: p.name, stat: t.stat, pts: t.pts }); C.log(S, `${p.name} finishes training: +${t.pts} ${t.stat.toUpperCase()}.`); }
+  // benched pets in the stable earn slow XP (8/h), never above Brian's level
+  const act = C.activePet(S); if (dt > 0) for (const p of S.pets || []) if (p !== act && p.lvl < S.hero.lvl) { p._sx = (p._sx || 0) + dt * 8 / 3600; const n = Math.floor(p._sx); if (n) { p._sx -= n; C.petXp(S, n, p); } }
+  const b = st.breed; if (b && now >= b.until) {
+    const pa = C.petByUid(S, b.a), pb = C.petByUid(S, b.b); st.breed = null;
+    if (pa && pb && (S.pets || []).length < C.ROSTER_MAX) { const c = C.breedChild(pa, pb); C.addPetObj(S, c); st.eggs = (st.eggs || 0) + 1; out.child = c; const bonus = Math.round(C.need(S.hero.lvl) * .1); S.restXp = Math.min(C.restCap(S), (S.restXp || 0) + bonus); out.rest = bonus; C.log(S, `A new ${c.rar} ${C.PETS[c.id].name} is born in the Stable${c.mutated ? ' (mutation!)' : ''}${c.upgraded ? ' (rarity up!)' : ''}. +${bonus} rest XP.`, c.rar); }
+  }
+  return out;
+};
+// breeding counts as resting: rest XP builds 50% faster while a pair is in the stall
+const _rest = C.addRest; C.addRest = (S, sec) => _rest(S, sec * (S.stable && S.stable.breed ? 1.5 : 1));
+// offline: resolve stable timers too
+const _sim = C.simulate; C.simulate = function (S, ms, opts) { const sum = _sim(S, ms, opts); const r = C.stableTick(S, Date.now()); if (r) sum.stable = r; return sum; };
+
+// ---------- region level bands (for the UI and tests) ----------
+C.zoneRange = (id, add = 0) => { const n = C.NODES[id]; if (!n) return null; if (n.type === 'dungeon') return [n.lvl, n.lvl + 2]; if (n.type === 'zone' && n.lvl) return [n.lvl + add, n.lvl + 2 + add]; return C.regionRange(n.biome, add); };
+C.zoneSpan = id => { const n = C.NODES[id]; if (!n) return null; const a = C.zoneRange(id, 0), b = C.zoneRange(id, n.type === 'zone' ? 4 : 0); return [a[0], b[1]]; };
+
+// ---------- saves ----------
+const LEG = { wolfpup: 'uncommon', fox: 'uncommon', otter: 'uncommon', mole: 'uncommon', owl: 'rare', drakeling: 'rare' };
+C.petsFresh = function (S) {
+  S.pets = (S.pets || []).map(p => p && p.uid ? p : C.PETS[p && p.id] ? C.makePet(p.id, { lvl: p.lvl || 1, xp: p.xp || 0, rar: LEG[p.id] || 'common', col: 0, shiny: false }) : null).filter(Boolean);
+  for (const p of S.pets) { p.train = p.train || { hp: 0, atk: 0, def: 0, spd: 0 }; if (!C.TRAITS[p.trait]) p.trait = 'brave'; if (p.hp == null) p.hp = C.petStats(p).hp; }
+  if (!S.pets.length && !S.v5) { const p = C.makePet('pup', { rar: 'common', name: 'Biscuit', col: 0, shiny: false }); S.pets.push(p); S.pet = 0; C.bagAdd(S, 'snare', 3); }
+  if (S.pet == null || S.pet >= S.pets.length) S.pet = S.pets.length ? 0 : -1;
+  S.dex = S.dex || {}; for (const p of S.pets) S.dex[p.id] = 1; S.v5 = 1; return S;
+};
+const _ns = C.newState; C.newState = () => C.petsFresh(_ns());
+const _mg = C.migrate; C.migrate = o => { const S = _mg(o); return S ? C.petsFresh(S) : S; };
+// rifts pick foes from C.ENEMIES; achievements count pets as before
 if (typeof module !== 'undefined' && module.exports) module.exports = C;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -2190,6 +2456,142 @@ A.PARTICLES = [
   { n: 18, color: ['#a080ff', '#60f0c0'], vx: [-2, 2], vy: [-6, -2], life: 5, glow: 1, kind: 'wisp' },
 ];
 A.TOD_TINT = { dawn: ['rgba(255,150,120,.16)', 'source-over'], day: null, dusk: ['rgba(255,110,60,.2)', 'source-over'], night: ['rgba(20,24,80,.42)', 'source-over'] };
+})();
+
+</script><script>
+// Brian Quest v5 art: warmer Breath-of-Fire-style palette ramps, 3/4 top-down ground tiles with bevels,
+// and procedural pet sprites (species body plan x seed features x color variant x rarity aura) with idle frames.
+(function () {
+'use strict';
+const A = window.ART, C = window.BQ;
+const hex = c => { const n = parseInt(c.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+const toHex = ([r, g, b]) => '#' + ((1 << 24) | (clamp8(r) << 16) | (clamp8(g) << 8) | clamp8(b)).toString(16).slice(1);
+const clamp8 = v => Math.max(0, Math.min(255, Math.round(v)));
+function hsl(c) { let [r, g, b] = hex(c).map(v => v / 255); const mx = Math.max(r, g, b), mn = Math.min(r, g, b); let h = 0, s = 0; const l = (mx + mn) / 2; if (mx !== mn) { const d = mx - mn; s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn); h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; } return [h, s, l]; }
+function fromHsl(h, s, l) { h = ((h % 360) + 360) % 360; s = Math.max(0, Math.min(1, s)); l = Math.max(0, Math.min(1, l)); const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l); const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)); return toHex([f(0) * 255, f(8) * 255, f(4) * 255]); }
+A.hueShift = (c, dh, dl = 0, ds = 0) => { const [h, s, l] = hsl(c); return fromHsl(h + dh, s + ds, l + dl); };
+// Warmer ramps: shadows lean to plum-brown instead of cold violet, highlights to peach (DS-era Breath of Fire feel).
+const mix = A.mix;
+A.ramp = function (base) { return [mix(mix(base, '#2c1424', .55), '#000', .12), mix(base, '#4a2434', .32), base, mix(base, '#ffe0a8', .3), mix(base, '#fff6dc', .6)]; };
+// warm up the outdoor biome palettes a touch
+for (const p of A.BIOME_PAL) { p.ground = A.ramp(mix(p.ground[2], '#c8a040', .12)); p.dirt = A.ramp(mix(p.dirt[2], '#d08848', .12)); p.hill = A.ramp(mix(p.hill[2], '#a07040', .08)); }
+let seed = 1; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+const hash = (x, y) => { let h = (x * 374761393 + y * 668265263) ^ 0x5bd1e995; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+
+// ---------- 3/4 view ground tiles ----------
+// Rows get taller toward the camera; each tile has a lit top edge, a shaded front lip and its own tint, like a DS tilemap seen at 3/4.
+function tileGround(biome, kind) {
+  const pal = A.BIOME_PAL[biome], LW = 512, H = 176, cv = document.createElement('canvas'); cv.width = LW; cv.height = H; const x = cv.getContext('2d');
+  const town = kind === 'town', G = town ? A.ramp('#9a8a78') : pal.ground, D = town ? A.ramp('#7a6a5c') : pal.dirt;
+  const rows = [[136, 5, 14], [141, 6, 16], [147, 7, 18], [154, 8, 20], [162, 9, 22], [171, 10, 24]];
+  rows.forEach(([y0, h, w], ri) => {
+    const path = !town && (ri === 2 || ri === 3), R = town ? (ri % 2 ? D : G) : path ? D : G, off = (ri % 2) * (w >> 1);
+    for (let tx = -off; tx < LW; tx += w) {
+      const n = hash(tx + 999, ri), base = R[n < .2 ? 1 : n > .85 ? 3 : 2];
+      x.fillStyle = base; x.fillRect(tx, y0, w, h);
+      x.fillStyle = R[Math.min(4, (n > .85 ? 4 : 3))]; x.fillRect(tx + 1, y0, w - 2, 1); x.fillRect(tx, y0, 1, h - 1); // lit top + left edge
+      x.fillStyle = R[0]; x.fillRect(tx, y0 + h - 1, w, 1); x.fillStyle = R[1]; x.fillRect(tx + w - 1, y0 + 1, 1, h - 1); // front lip + right shade
+      if (path || town) { if (n > .5) { x.fillStyle = R[1]; x.fillRect(tx + 3 + (n * 7 | 0), y0 + 2, 2, 1); } }
+      else {
+        for (let k = 0; k < 3; k++) { const bx = tx + 2 + Math.floor(hash(tx, k + ri * 7) * (w - 4)), by = y0 + 1 + Math.floor(hash(k, tx + ri) * (h - 2)); x.fillStyle = R[4]; x.fillRect(bx, by - 1, 1, 2); x.fillStyle = R[1]; x.fillRect(bx + 1, by, 1, 1); }
+        if (n > .93 && biome !== 4) { x.fillStyle = ['#ffd060', '#ff8aa0', '#ffffff', '#a8c8ff'][Math.floor(n * 1000) % 4]; x.fillRect(tx + (w >> 1), y0 + (h >> 1), 1, 1); x.fillRect(tx + (w >> 1) + 2, y0 + (h >> 1) + 1, 1, 1); }
+      }
+    }
+  });
+  // soft contact shadow where the hill meets the ground
+  x.fillStyle = 'rgba(40,16,24,.25)'; x.fillRect(0, 136, LW, 2);
+  return cv;
+}
+const _layers = A.layers, done = {};
+A.layers = function (biome, kind, extra) {
+  const L = _layers(biome, kind, extra), key = biome + kind + (extra || '');
+  if (!done[key] && (kind === 'field' || kind === 'camp' || kind === 'town' || kind === 'zone')) { L.near = tileGround(biome, kind); done[key] = 1; }
+  return L;
+};
+
+// ---------- procedural pets ----------
+const PCACHE = new Map();
+A.petColors = p => {
+  const d = C.PETS[p.id] || C.PETS.pup, v = C.COLORS[p.col || 0] || C.COLORS[0];
+  let base = v[1] ? A.hueShift(d.col, v[1], v[2]) : d.col; if (p.shiny) base = A.hueShift(d.col, 160, .08, .2);
+  const belly = mix(base, '#fff0d0', .55), accent = A.hueShift(base, p.shiny ? 60 : 25, -.12, .1);
+  return { body: A.ramp(base), belly: A.ramp(belly), acc: A.ramp(accent), eye: d.el === 'shadow' ? '#ff4ad0' : d.el === 'fire' ? '#ffe040' : d.el === 'frost' ? '#40e0ff' : '#1a1018' };
+};
+A.pet = function (p, f = 0, mode) {
+  const key = (p.uid || p.id) + ':' + p.id + p.col + (p.shiny ? 's' : '') + p.rar + (f % 4) + (mode || ''); if (PCACHE.has(key)) return PCACHE.get(key);
+  const d = C.PETS[p.id] || C.PETS.pup, g = A.Grid(32, 32), cl = A.petColors(p); seed = (p.seed || 7) % 100000 + 1;
+  const ear = 2 + Math.floor(rnd() * 3), tail = 3 + Math.floor(rnd() * 5), spots = rnd() < .45, mane = rnd() < .35, horn = C.PET_RAR.indexOf(p.rar) >= 2 && rnd() < .6, big = rnd() * 1.2;
+  const b = f % 2, b4 = f % 4, breathe = b4 === 1 || b4 === 2 ? 1 : 0;
+  const E = (cx, cy, rx, ry, rp, o) => g.ell(cx, cy, rx, ry, rp, o), P = (pts, rp) => g.poly(pts, rp), Rc = (x, y, w, h, rp) => g.srect(x, y, w, h, rp);
+  switch (d.body) {
+    case 'bird': {
+      const fl = b ? -3 : 0;
+      Rc(13, 25, 1, 4, cl.acc); Rc(18, 25, 1, 4, cl.acc);
+      E(16, 19 - breathe * .5, 7 + big * .5, 7, cl.body); E(16, 21, 4, 4, cl.belly);
+      P([[9, 16], [3 + fl, 10 + fl], [8, 22]], cl.body); P([[23, 16], [29 - fl, 10 + fl], [24, 22]], cl.body);
+      E(17, 10 - breathe * .5, 5, 4.5, cl.body); P([[21, 10], [25, 11], [21, 12]], cl.acc);
+      if (ear > 2) { P([[13, 7], [12, 2], [15, 6]], cl.body); P([[19, 6], [21, 2], [21, 7]], cl.body); }
+      g.set(15, 9, cl.eye); g.set(19, 9, cl.eye); g.set(15, 8, '#fff'); g.set(19, 8, '#fff');
+      if (d.el === 'fire') for (let i = 0; i < tail; i++) g.set(10 - i, 23 + (i % 2), i % 2 ? '#ffd060' : '#ff7a20');
+      else P([[12, 24], [8 - tail * .4, 29], [15, 26]], cl.acc);
+      break;
+    }
+    case 'drake': {
+      const wy = b ? -3 : 0;
+      P([[12, 15], [7, 3 + wy], [17, 6 + wy], [18, 15]], cl.acc);
+      Rc(9, 22, 3, 6, cl.body); Rc(19, 22, 3, 6, cl.body);
+      P([[7, 19], [1, 14 - tail * .5], [3, 18], [8, 23]], cl.body);
+      E(15, 19, 8, 5.5 + breathe * .3, cl.body); E(15, 21, 5, 3, cl.belly);
+      Rc(11, 23, 3, 6, cl.body); Rc(21, 23, 3, 6, cl.body);
+      E(24, 12, 5, 4.5, cl.body); E(28, 14, 3, 2, cl.body);
+      P([[22, 8], [21, 2], [24, 7]], cl.belly); if (horn) P([[25, 8], [27, 2], [27, 8]], cl.belly);
+      g.set(25, 11, cl.eye); g.set(25, 10, '#fff'); if (b && d.el === 'fire') { g.set(31, 14, '#ffd060'); g.set(30, 15, '#ff7a20'); } if (b && d.el === 'frost') { g.set(31, 14, '#e0f8ff'); g.set(30, 13, '#80d0ff'); }
+      break;
+    }
+    case 'toad': {
+      E(8, 26, 4, 2.5, cl.body); E(24, 26, 4, 2.5, cl.body);
+      E(16, 21 - breathe * .5, 11 + big, 7 + breathe * .4, cl.body); E(16, 24, 7, 3.5, cl.belly);
+      E(11, 14, 3.5, 3.5, cl.body); E(21, 14, 3.5, 3.5, cl.body); E(11, 13, 2, 2, A.ramp('#f0d040')); E(21, 13, 2, 2, A.ramp('#f0d040')); g.set(11, 13, '#1a1018'); g.set(21, 13, '#1a1018');
+      for (let i = 9; i < 24; i++) g.set(i, 20 + Math.round(Math.sin(i / 2.5) * .6), cl.body[0]);
+      break;
+    }
+    case 'blob': {
+      E(16, 22 - breathe * .5, 10 + big, 8 + breathe * .5, cl.body, { bias: .1 }); E(13, 18, 4, 3, cl.belly, { bias: .3 });
+      g.rect(11, 21, 2, 2, '#1a1018'); g.rect(19, 21, 2, 2, '#1a1018'); g.set(11, 21, '#fff'); g.set(19, 21, '#fff');
+      if (d.id !== 'mole') for (let i = 0; i < 4; i++) Rc(8 + i * 5, 12 + (i % 2) * 2 - breathe, 3, 3, cl.acc); else { P([[14, 24], [16, 27], [18, 24]], A.ramp('#e8a0a0')); Rc(6, 27, 4, 2, cl.acc); Rc(22, 27, 4, 2, cl.acc); }
+      break;
+    }
+    case 'orb': {
+      const fy = Math.round(Math.sin(f * Math.PI / 2) * 1.5);
+      for (let i = 0; i < tail + 3; i++) { const ty = 24 + fy + i, tx = 16 + Math.round(Math.sin((i + f) * .9) * 2); g.set(tx, ty, cl.acc[i % 2 ? 3 : 2]); g.set(tx + 1, ty, cl.acc[1]); }
+      E(16, 16 + fy, 8, 8, cl.body, { bias: .4 }); E(14, 14 + fy, 4, 4, cl.belly, { bias: .8 });
+      g.rect(13, 16 + fy, 2, 2, '#fff'); g.rect(18, 16 + fy, 2, 2, '#fff'); g.set(14, 17 + fy, cl.eye); g.set(19, 17 + fy, cl.eye);
+      break;
+    }
+    default: { // quadruped
+      const wag = b ? 2 : 0;
+      Rc(8, 22, 3, 6 - b, cl.body); Rc(18, 22, 3, 6 + b - 1, cl.body);
+      P([[7, 17], [7 - tail * .7, 10 + wag], [5 - tail * .4, 13 + wag], [8, 20]], d.id === 'fox' ? cl.acc : cl.body);
+      E(14, 19, 8 + big * .6, 5 + breathe * .4, cl.body); E(14, 21.5, 5, 2.5, cl.belly);
+      if (spots) for (let i = 0; i < 3; i++) g.set(10 + i * 3, 17 + (i % 2), cl.body[1]);
+      Rc(10, 23, 3, 6 + b, cl.body); Rc(20, 23, 3, 6 - b, cl.body);
+      if (mane) E(20, 15, 4, 5, cl.acc);
+      E(23, 13 - breathe * .3, 5, 4.5, cl.body); E(27, 15, 3, 2, cl.belly);
+      P([[20, 10], [20 + (d.id === 'frosthare' ? 0 : 1), 10 - ear * (d.id === 'frosthare' ? 2.5 : 1.3)], [23, 9]], cl.body); P([[23, 9], [25, 9 - ear * (d.id === 'frosthare' ? 2.5 : 1.3)], [26, 10]], cl.body);
+      if (horn || d.id === 'hollowstag') { g.line(22, 8, 20, 2, cl.belly[3]); g.line(21, 4, 19, 3, cl.belly[3]); g.line(25, 8, 27, 2, cl.belly[3]); g.line(26, 4, 28, 3, cl.belly[3]); }
+      if (d.id === 'boarlet') { g.set(29, 16, '#f0e8d0'); g.set(29, 15, '#f0e8d0'); }
+      g.set(24, 12, cl.eye); g.set(24, 11, '#fff'); g.set(29, 14, '#1a1018');
+    }
+  }
+  A.outline(g, .82);
+  // rarity dressing: epic sparkle, legendary golden aura, shiny prism glints
+  const ri = C.PET_RAR.indexOf(p.rar);
+  if (ri >= 3 || p.shiny) { const col = p.shiny ? ['#ffffff', '#a8f0ff', '#ffb0f0'][f % 3] : ri === 4 ? '#ffd060' : '#e0a0ff'; for (let i = 0; i < (ri === 4 ? 4 : 2); i++) g.set(4 + ((i * 11 + f * 7) % 24), 2 + ((i * 7 + f * 5) % 10), col); }
+  if (ri === 4) { const add = []; for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) if (!g.get(x, y) && (g.get(x + 1, y) || g.get(x - 1, y) || g.get(x, y + 1) || g.get(x, y - 1)) && (x + y + f) % 3 === 0) add.push([x, y]); add.forEach(([x, y]) => g.set(x, y, '#ffb030')); }
+  let cv = A.toCanvas(g, mode);
+  PCACHE.set(key, cv); if (PCACHE.size > 600) PCACHE.delete(PCACHE.keys().next().value); return cv;
+};
+A.RAR_COL = { common: '#c8c0b0', uncommon: '#5cc85c', rare: '#58a0ff', epic: '#c070ff', legendary: '#ffa830' };
 })();
 
 </script><script>
@@ -3059,8 +3461,140 @@ function fresh4(D) {
   D.codex = { [C.UNIQUES[0].id]: 1, [C.UNIQUES[3].id]: 1 }; D.riftBest = 11; D.qi = 3; D.restXp = Math.round(C.restCap(D) * .4);
   D.loadouts = [['cleave', 'firebrand', 'bash', 'secondwind'], ['firebrand', 'secondwind']]; D.lo = 0;
   D.house = { plot: 'thornwick:1', rooms: { trophy: 1, garden: 1, shaft: 1 }, acc: {} };
-  C.achCheck(D); D.title = 'the Angler'; D.ach.angler = 1; D.log = D.log.slice(0, 3);
+  C.achCheck(D); D.title = 'the Angler'; D.ach.angler = 1; D.log = D.log.slice(0, 3); C.petsFresh(D);
 }
+
+// ================= v5: fighting pets, catching, roster, stable, breeding =================
+TABS.splice(TABS.findIndex(t => t[0] === 'pets') + 1, 0, ['stable', 'Stable', 'hide']);
+$('tabs').innerHTML = TABS.map(([id, l, ic]) => `<button data-tab="${id}" id="tab-${id}">${A.iconImg(ic)}<span>${l}</span></button>`).join('');
+const RC5 = r => A.RAR_COL[r] || '#fff';
+const petCv = (p, sz = 32, cls = 'petcv') => `<canvas class="${cls}" data-uid="${p.uid}" width="32" height="32" style="width:${sz}px;height:${sz}px"></canvas>`;
+const statLine = p => { const s = C.petStats(p); return `HP <b>${s.hp}</b> ATK <b>${s.atk}</b> DEF <b>${s.def}</b> SPD <b>${s.spd}</b>`; };
+let petSel = null, breedA = null, breedB = null;
+XP.pets = function () {
+  const ps = S.pets || [], act = C.activePet(S), inTown = C.node(S).type === 'town' && !S.travel;
+  let h = `<h3>Party</h3>`;
+  if (act) { const s = C.petStats(act), d = C.PETS[act.id]; h += `<div class="row">${petCv(act, 64)}<div class="grow"><b style="color:${RC5(act.rar)}">${esc(act.name)}</b> L${act.lvl} <span class="muted">${esc(act.rar)} ${esc(d.name)}</span><div class="sub">${statLine(act)}</div>${pbar(Math.max(0, act.hp), s.hp, '#e05a4a')}${pbar(act.xp, C.petNeed(act.lvl), '#7ae07a')}<div class="sub">Type <span style="color:${C.PET_EL[d.el]}">${d.el}</span> | ${d.ab.map(k => `<b>${C.PET_ABIL[k].name}</b>: ${C.PET_ABIL[k].desc}`).join(' ')}<br>Trait <b>${C.TRAITS[act.trait].name}</b> (${C.TRAITS[act.trait].desc}) | Potential ${C.ivPct(act)}% | Gen ${act.gen || 0}</div></div></div>`; }
+  else h += `<div class="muted">No pet in your party slot. Pick one below.</div>`;
+  h += `<h3>Roster <span class="muted">${ps.length}/${C.ROSTER_MAX}</span></h3><div class="sub">Snares ${C.has(S, 'snare')} | Great Snares ${C.has(S, 'greatsnare')} | Pet Treats ${C.has(S, 'petfood')} | Eggs ${C.has(S, 'petegg')}</div>`;
+  const order = ps.map((p, i) => [p, i]).sort((a, b) => C.PET_RAR.indexOf(b[0].rar) - C.PET_RAR.indexOf(a[0].rar) || b[0].lvl - a[0].lvl);
+  h += `<div class="roster">` + order.map(([p, i]) => `<div class="row petrow" id="pet-${i}">${petCv(p, 40)}<div class="grow"><b style="color:${RC5(p.rar)}">${esc(p.name)}</b>${p.shiny ? ' <span class="legendary">*shiny*</span>' : ''} L${p.lvl} <span class="muted">${esc(C.PETS[p.id].name)}, ${C.COLORS[p.col || 0][0]}, ${C.TRAITS[p.trait].name}, ${C.ivPct(p)}%</span><div class="sub">${statLine(p)}${S.stable && S.stable.train[p.uid] ? ' | <span class="good">training</span>' : ''}${S.stable && S.stable.breed && (S.stable.breed.a === p.uid || S.stable.breed.b === p.uid) ? ' | <span class="epic">breeding</span>' : ''}</div></div><button data-do="petset|${i}" id="petset-${i}" class="${S.pet === i ? 'on' : ''}" ${B ? 'disabled' : ''}>${S.pet === i ? 'Party' : 'Bring'}</button><button data-do="petrel|${i}" class="warn" ${ps.length <= 1 || S.pet === i ? 'disabled' : ''}>X</button></div>`).join('') + `</div>`;
+  h += `<h4>Supplies</h4>` + (inTown ? Object.entries(C.PET_SHOP).map(([k, c]) => `<div class="row"><div class="grow">${esc(C.MATS[k].name)} <span class="gold">${c}g</span><div class="sub">${k === 'snare' ? 'Throw in battle at a weakened wild pet.' : k === 'greatsnare' ? '1.7x catch chance. For rare and better.' : 'Stable training food (+3 instead of +2).'}</div></div><button data-do="petbuy|${k}" id="buy-${k}" ${S.hero.gold < c ? 'disabled' : ''}>Buy</button><button data-do="petbuy|${k}|5" ${S.hero.gold < c * 5 ? 'disabled' : ''}>x5</button></div>`).join('') : `<div class="sub muted">Snares and treats are sold in any town.</div>`);
+  h += `<div class="row"><div class="grow">Pet Eggs: ${C.has(S, 'petegg')}<div class="sub">From bosses, dungeons, dailies and the Rift shop. Hatches a random species.</div></div><button id="hatch" data-do="hatch" ${C.has(S, 'petegg') ? 'class="go"' : 'disabled'}>Hatch</button></div>`;
+  h += `<div class="row"><div class="grow">Auto battle throws snares<div class="sub">At wild pets under 40% HP: new species, or uncommon and better.</div></div><button data-do="autocatch" class="${S.opts.autoCatch !== false ? 'on' : ''}">${S.opts.autoCatch !== false ? 'On' : 'Off'}</button></div>`;
+  const dex = S.dex || {}; h += `<h4>Pet Dex <span class="muted">${Object.keys(dex).length}/${Object.keys(C.PETS).length}</span></h4>` + Object.entries(C.PETS).map(([k, d]) => `<div class="sub">${dex[k] ? `<b style="color:${C.PET_EL[d.el]}">${esc(d.name)}</b>` : '???'} <span class="muted">${d.legend ? '<span class="legendary">LEGENDARY</span> ' : ''}${esc(d.how)}</span></div>`).join('');
+  const cp = C.companion(S); h += `<h3>Companion</h3>`;
+  h += Object.entries(C.COMPANIONS).map(([k, c]) => `<div class="row">${A.iconImg('hero', k === 'marta' ? '#ff8a6a' : '#a8e0a8')}<div class="grow"><b>${esc(c.name)}</b>, ${esc(c.role)}<div class="sub">${esc(c.desc)} ${c.wage(S.hero.lvl)}g/hour.${cp && cp.id === k ? ` <span class="good">With Brian: ${dur((cp.until - Date.now()) / 1000)} left.</span>` : ''}</div></div><button id="hire-${k}" data-do="hire|${k}" ${S.hero.gold < c.wage(S.hero.lvl) * 2 ? 'disabled' : ''}>Hire 2h</button></div>`).join('');
+  return h;
+};
+DO.petset = i => { if (B) return; S.pet = S.pet === +i ? -1 : +i; };
+DO.petrel = i => { const p = S.pets[+i]; if (!p) return; modal(`<h3>Release ${esc(p.name)}?</h3><div>${esc(p.rar)} ${esc(C.PETS[p.id].name)} L${p.lvl}. It leaves 2 Pet Treats behind.</div>`, [['Release', () => { C.releasePet(S, +i); save(); }, 'warn'], ['Keep']]); };
+DO.petbuy = (k, n) => { if (C.buyPetItem(S, k, +(n || 1))) snd('coin'); };
+DO.autocatch = () => { S.opts.autoCatch = S.opts.autoCatch === false; };
+DO.hatch = () => { const r = C.hatch(S); if (r) { const p = S.pets[S.pets.length - 1]; banner = { txt: 'HATCHED: ' + p.name.toUpperCase(), t: 0 }; snd('lvl'); toast(`The egg hatches: <span style="color:${RC5(p.rar)}">${esc(p.rar)} ${esc(p.name)}</span>`); } };
+// ---- stable ----
+XP.stable = function () {
+  const st = S.stable, owned = Object.keys(S.plots); let h = `<h3>Stable</h3>`;
+  if (!st) { h += `<div>Build a Stable on one of your town plots to train pets and breed them. The shop on the plot keeps running.</div>`; h += owned.length ? owned.map(k => `<div class="row"><div class="grow">${esc(C.NODES[k.split(':')[0]].name)}, ${esc(C.PLOT_NAMES[+k.split(':')[1]])}</div><button id="stable-${k.replace(':', '-')}" data-do="stable|${k}" ${S.hero.gold < C.STABLE_COST ? 'disabled' : 'class="go"'}>Build (${fmt(C.STABLE_COST)}g)</button></div>`).join('') : `<div class="muted">Buy a plot in the Estate tab first.</div>`; return h; }
+  h += `<canvas id="stablecv" width="256" height="96" style="width:100%;image-rendering:pixelated"></canvas><div class="sub">On your plot in ${esc(C.NODES[st.plot.split(':')[0]].name)}. Timers run in real time, also while the game is closed. Benched pets earn 8 XP per hour here.</div>`;
+  // training
+  h += `<h4>Training <span class="muted">${Object.keys(st.train).length}/3 stalls</span></h4>`;
+  for (const [u, t] of Object.entries(st.train)) { const p = C.petByUid(S, u); if (p) h += `<div class="row">${petCv(p, 32)}<div class="grow">${esc(p.name)}: +${t.pts} ${t.stat.toUpperCase()}${pbar(C.TRAIN_SEC - (t.until - Date.now()) / 1000, C.TRAIN_SEC, '#ffd060')}<div class="sub">${dur(Math.max(0, (t.until - Date.now()) / 1000))} left</div></div></div>`; }
+  const tp = petSel && C.petByUid(S, petSel) || C.activePet(S) || S.pets[0];
+  if (tp) { h += `<div class="row"><div class="grow">Train <select data-do="petsel" id="trainsel">${S.pets.map(p => `<option value="${p.uid}" ${p === tp ? 'selected' : ''}>${esc(p.name)} L${p.lvl}</option>`).join('')}</select><div class="sub">Trained: ${C.PET_STATS.map(k => `${k.toUpperCase()} ${tp.train[k] || 0}/${C.TRAIN_CAP}`).join(', ')}. 30 min per session. Gold ${C.trainCost(tp)}g = +2, or 1 Pet Treat = +3.</div></div></div><div class="row" style="flex-wrap:wrap">` + C.PET_STATS.map(k => `<button id="train-${k}" data-do="train|${k}|gold" ${C.canTrain(S, tp, k) && S.hero.gold >= C.trainCost(tp) ? '' : 'disabled'}>${k.toUpperCase()} ${C.trainCost(tp)}g</button><button id="trainf-${k}" data-do="train|${k}|food" ${C.canTrain(S, tp, k) && C.has(S, 'petfood') ? '' : 'disabled'}>${k.toUpperCase()} treat</button>`).join('') + `</div>`; }
+  // breeding
+  h += `<h4>Breeding</h4>`;
+  if (st.breed) { const a = C.petByUid(S, st.breed.a), b = C.petByUid(S, st.breed.b), tot = (st.breed.until - st.breed.start) / 1000; h += `<div class="row">${a ? petCv(a, 32) : ''}${b ? petCv(b, 32) : ''}<div class="grow">${esc(a ? a.name : '?')} + ${esc(b ? b.name : '?')}${pbar(tot - (st.breed.until - Date.now()) / 1000, tot, '#ff8ad0')}<div class="sub">Egg in ${dur(Math.max(0, (st.breed.until - Date.now()) / 1000))}. Rest XP builds 50% faster while a pair is in the stall.</div></div></div>`; }
+  else {
+    const ok = S.pets.filter(p => p.lvl >= 5 && !C.PETS[p.id].legend), opt = sel => `<option value="">-</option>` + ok.map(p => `<option value="${p.uid}" ${p.uid === sel ? 'selected' : ''}>${esc(p.name)} L${p.lvl} (${p.rar})</option>`).join('');
+    const a = C.petByUid(S, breedA), b = C.petByUid(S, breedB), can = C.canBreed(S, a, b);
+    h += `<div class="row"><select data-do="breedA" id="breedA">${opt(breedA)}</select><select data-do="breedB" id="breedB">${opt(breedB)}</select></div><div class="sub">Pets L5+. Legendaries cannot breed. The child takes a species from one parent, stats (IVs) from both with a little drift, usually a parent's trait and color. 8% rarity up, 6% mutation (new trait, color, +8 to a stat).</div>`;
+    h += can ? `<div class="row"><div class="grow">${dur(C.breedSec(a, b))}, ${C.breedCost(a, b)}g</div><button id="breed" class="go" data-do="breed" ${S.hero.gold < C.breedCost(a, b) ? 'disabled' : ''}>Breed</button></div>` : `<div class="sub muted">Pick two different pets.</div>`;
+  }
+  return h;
+};
+DO.stable = k => { if (C.buildStable(S, k)) { snd('lvl'); toast('Stable built!'); save(); } };
+DO.petsel = (el) => { petSel = el.value; };
+DO.breedA = el => { breedA = el.value; }; DO.breedB = el => { breedB = el.value; };
+DO.train = (k, pay) => { const tp = petSel && C.petByUid(S, petSel) || C.activePet(S) || S.pets[0]; if (tp && C.startTraining(S, tp.uid, k, pay)) { snd('coin'); save(); } };
+DO.breed = () => { if (C.startBreed(S, breedA, breedB)) { snd('lvl'); toast('The pair settles in. Check back later.'); breedA = breedB = null; save(); } };
+function drawStable() {
+  const c = $('stablecv'); if (!c || !S.stable) return; const x = c.getContext('2d'); x.imageSmoothingEnabled = false; const L = A.layers(0, 'field');
+  x.drawImage(L.sky, 0, 0, 256, 176, 0, -40, 256, 176); x.drawImage(L.near, 0, 120, 256, 56, 0, 52, 256, 44);
+  // barn: 3/4 view roof + plank wall
+  const wood = A.ramp('#8a5a32'), roof = A.ramp('#a83a2a'); for (let yy = 22; yy < 70; yy++) for (let xx = 40; xx < 216; xx++) { const plank = (xx - 40) % 8 === 0; x.fillStyle = plank ? wood[0] : wood[(yy + (xx >> 3)) % 7 === 0 ? 1 : 2]; x.fillRect(xx, yy, 1, 1); }
+  for (let i = 0; i < 14; i++) { x.fillStyle = roof[i < 3 ? 3 : i > 11 ? 0 : 2]; x.fillRect(32 + i, 8 + i, 192 - i * 2, 1); } x.fillStyle = roof[4]; x.fillRect(46, 8, 164, 1); x.fillStyle = '#2a1418'; x.fillRect(32, 22, 192, 2);
+  for (let s = 0; s < 4; s++) { const sx = 48 + s * 42; x.fillStyle = '#2a1810'; x.fillRect(sx, 36, 34, 34); x.fillStyle = wood[3]; x.fillRect(sx, 36, 34, 2); x.fillRect(sx, 52, 34, 2); }
+  const t = performance.now() / 300 | 0; const show = [...Object.keys(S.stable.train), S.stable.breed && S.stable.breed.a, S.stable.breed && S.stable.breed.b].filter(Boolean);
+  show.slice(0, 4).forEach((u, s) => { const p = C.petByUid(S, u); if (p) x.drawImage(A.pet(p, t + s), 49 + s * 42, 38); });
+  if (S.stable.breed) { x.fillStyle = '#ff8ad0'; x.fillRect(128 + Math.round(Math.sin(t) * 2), 30, 2, 2); x.fillRect(126, 31, 2, 1); x.fillRect(130, 31, 2, 1); }
+  const act = C.activePet(S); if (act) x.drawImage(A.pet(act, t), 220, 62);
+}
+const _dpa = drawPanelArt;
+drawPanelArt = function () { _dpa(); document.querySelectorAll('canvas.petcv[data-uid]').forEach(c => { const p = C.petByUid(S, c.dataset.uid); if (!p) return; const x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.clearRect(0, 0, 32, 32); x.drawImage(A.pet(p, 0), 0, 0); }); drawStable(); };
+// ---- battle: pet events, catch buttons, wild pet + party pet art ----
+const _play5 = playEvent;
+playEvent = function (e) {
+  if (e.t === 'pact') { petLunge = 1; const a = C.PET_ABIL[e.k]; if (a.cd) float(HERO_X - 26, GY - 44, a.name.toUpperCase(), '#a8ffa8'); return; }
+  if (e.t === 'dmg' && e.who === 'pet') { petFlash = .2; float(HERO_X - 26, GY - 36, String(e.amt), '#ff9a8a'); snd('hurt'); shake = 2; return; }
+  if (e.t === 'msg' && e.who === 'pet') { float(HERO_X - 26, GY - 52, e.m.toUpperCase(), '#c8ffc8'); return; }
+  if (e.t === 'hact' && e.snare) { float(HERO_X, GY - 74, 'SNARE!', '#ffd860'); snareFx = 1; return; }
+  if (e.t === 'end' && e.result === 'caught') { const p = C.petByUid(S, e.pet); foeDying = .01; snd('lvl'); banner = { txt: 'CAUGHT ' + (p ? p.name.toUpperCase() : ''), t: 0 }; if (p) { toast(`Caught <span style="color:${RC5(p.rar)}">${esc(p.rar)} ${esc(p.name)}</span> (${C.ivPct(p)}% potential)! See Pets.`); if (C.PET_RAR.indexOf(p.rar) >= 3) beam = { t: 0, col: RC5(p.rar) }; } const b = B; setTimeout(() => { if (B === b) { B = null; render(); save(); } }, 1200); return; }
+  if (e.t === 'end' && e.result === 'win' && e.petxp) { const p = C.activePet(S); if (p) float(HERO_X - 26, GY - 60, '+' + e.petxp + ' PET XP', '#7ae07a'); }
+  _play5(e);
+};
+let petLunge = 0, petFlash = 0, snareFx = 0, inScene = false;
+const _enemy5 = A.enemy;
+A.enemy = function (def, f, mode) {
+  if (inScene && B && B.e.pet && def.key === B.e.key) { const k = 'wild' + B.e.pet.uid + f + (mode || ''); if (petFoeCache.has(k)) return petFoeCache.get(k); const c = document.createElement('canvas'); c.width = 72; c.height = 72; const x = c.getContext('2d'); x.imageSmoothingEnabled = false; const sc = B.e.pet.rar === 'legendary' ? 2.2 : 2; x.translate(72, 0); x.scale(-1, 1); x.drawImage(A.pet(B.e.pet, f, mode), 36 - 16 * sc, 70 - 32 * sc, 32 * sc, 32 * sc); petFoeCache.set(k, c); if (petFoeCache.size > 80) petFoeCache.delete(petFoeCache.keys().next().value); return c; }
+  return _enemy5(def, f, mode);
+};
+const petFoeCache = new Map();
+const _draw5 = draw;
+draw = function (dt) {
+  // hide the v4 follower (it used the old sprite) and draw the v5 one with HP bar in battle
+  const ap = S.pet; S.pet = -1; inScene = true; try { _draw5(dt); } finally { S.pet = ap; inScene = false; }
+  const p = C.activePet(S), t = simT; if (!p || S.camp.atCamp) return;
+  const moving = heroPose() === 'walk', fr = Math.floor(t * (moving ? 8 : 3)) % 4, d = C.PETS[p.id], fly = d.body === 'bird' || d.body === 'orb';
+  const ko = B && B.pet && B.pet.ko, px = (B ? HERO_X - 30 : 70) + petLunge * 12, py = GY - 30 + (fly ? -22 + Math.round(Math.sin(t * 3) * 2) : 0);
+  petLunge = Math.max(0, petLunge - dt * 4);
+  ctx.fillStyle = 'rgba(10,8,20,.35)'; ctx.fillRect(px - 9, GY - 1, 18, 2);
+  if (ko) ctx.globalAlpha = .35; ctx.drawImage(A.pet(p, fr, petFlash > 0 ? 'flash' : null), Math.round(px - 16), Math.round(py)); ctx.globalAlpha = 1; petFlash -= dt;
+  if (B) { const s = C.petStats(p), w = 22; ctx.fillStyle = '#0a0a1c'; ctx.fillRect(px - 11, py - 3, w + 2, 4); ctx.fillStyle = ko ? '#555' : '#e05a4a'; ctx.fillRect(px - 10, py - 2, Math.round(w * Math.max(0, p.hp) / s.hp), 2); A.text(ctx, 'L' + p.lvl, px - 12, py - 10, RC5(p.rar)); }
+  if (snareFx > 0) { snareFx -= dt; const k = 1 - snareFx; const sx = HERO_X + (FOE_X - HERO_X) * k, sy = GY - 40 - Math.sin(k * Math.PI) * 30; ctx.fillStyle = '#ffd860'; ctx.fillRect(sx - 2, sy - 2, 5, 5); ctx.fillStyle = '#a05a20'; ctx.fillRect(sx - 1, sy - 1, 3, 3); }
+  if (B && B.e.pet && !B.over) { const e = B.e; A.text(ctx, e.pet.rar.toUpperCase() + (e.pet.shiny ? ' SHINY' : ''), 249, 34, RC5(e.pet.rar), 'right'); }
+};
+const _act5 = actions;
+actions = function () {
+  const out = _act5();
+  if (B && B.e.pet) { const full = (S.pets || []).length >= C.ROSTER_MAX; const ch = k => Math.round(C.catchChance(S, B, k) * 100);
+    out.splice(1, 0, btn(`Snare ${C.has(S, 'snare')} (${ch('snare')}%)`, () => act('catch'), { id: 'a-catch', cls: 'go', dis: B.over || !C.has(S, 'snare') || full }));
+    if (C.has(S, 'greatsnare')) out.splice(2, 0, btn(`Great ${C.has(S, 'greatsnare')} (${ch('greatsnare')}%)`, () => act('greatsnare'), { id: 'a-gcatch', cls: 'go', dis: B.over || full })); }
+  return out;
+};
+// region level bands on the map panels
+const _li5 = localInfo; localInfo = function () { let h = _li5(); const L = C.curLocal(S), n = C.node(S), s = L.sp[localSel && L.sp[localSel] ? localSel : C.spot(S).id]; if (!S.travel && s && (s.kind === 'hunt' || s.kind === 'cave' || s.kind === 'lair') && n.type === 'zone') { const r = C.zoneRange(S.loc, s.kind === 'cave' ? 3 : s.lvlAdd || 0); h += `<div class="sub">Foes here: <b>L${r[0]}-${r[1]}</b> (fixed for this area)${r[1] + 6 < S.hero.lvl ? ' <span class="muted">- far below Brian, reduced XP</span>' : ''}. Wild pets roam: ${[...new Set(Object.keys(C.PETS).filter(k => !C.PETS[k].legend && C.PETS[k].biomes.includes(n.biome)).map(k => (S.dex || {})[k] ? C.PETS[k].name : '???'))].join(', ')}.</div>`; } return h; };
+const _pm5 = pMap; pMap = function () { let h = _pm5(); if (mapMode !== 'region') return h; const sel = mapSel && C.NODES[mapSel].region === mapRegion ? mapSel : (C.NODES[S.loc].region === mapRegion ? S.loc : null); const n = sel && C.NODES[sel]; if (n && (n.type === 'zone' || n.type === 'dungeon')) { const r = C.zoneSpan(sel); h = h.replace('</h3>', ` <span class="gold">L${r[0]}-${r[1]}</span></h3>`); } return h; };
+// stable timers + toasts
+let st5 = 0; const _step5 = step;
+step = function (dt) { st5 += dt; if (st5 >= 1) { st5 = 0; const r = C.stableTick(S); if (r) { for (const x of r.trained) toast(`${esc(x.name)} trained: +${x.pts} ${x.stat.toUpperCase()}`); if (r.child) { banner = { txt: 'NEW PET BORN', t: 0 }; toast(`Stable: a <span style="color:${RC5(r.child.rar)}">${esc(r.child.rar)} ${esc(r.child.name)}</span> was born${r.child.mutated ? ' (mutation!)' : ''}!`); } } } _step5(dt); };
+// demos for screenshots/tests
+const _demo5 = demo;
+demo = function (kind) {
+  const v5 = { petbattle: 'vale', stable: 'thornwick', roster: 'vale', v5region: 'vale' }[kind];
+  _demo5(v5 ? 'shop' : kind); C.petsFresh(S);
+  if (v5) {
+    S.loc = v5; S.spot = C.localMap(v5).start; S.act = 'idle'; fresh4(S); C.petsFresh(S); S.hero.hp = C.heroStats(S).hp;
+    const mk = (sp, o) => { const p = C.makePet(sp, o); S.pets.push(p); S.dex[sp] = 1; return p; };
+    mk('emberlynx', { lvl: 14, rar: 'rare', trait: 'fierce' }); mk('frosthare', { lvl: 9, rar: 'uncommon', col: 4 }); mk('wisp', { lvl: 18, rar: 'epic', trait: 'gentle' }); mk('phoenix', { lvl: 22, trait: 'mighty' }); mk('boarlet', { lvl: 6, rar: 'common', col: 2 }); mk('pup', { lvl: 11, rar: 'uncommon', shiny: true, name: 'Biscuit II', gen: 1 }); mk('sparkbat', { lvl: 12, rar: 'rare', col: 6 }); mk('toadling', { lvl: 5, rar: 'common' });
+    S.pet = 0; C.bagAdd(S, 'snare', 6); C.bagAdd(S, 'greatsnare', 2); C.bagAdd(S, 'petfood', 4);
+  }
+  if (kind === 'petbattle') { tab = 'pets'; S.opts.auto = false; S.spot = 'a1'; startBattle({ biome: 0, forceWild: 'emberlynx' }); B.e.pet.rar = 'epic'; B.e.hp = Math.round(B.e.maxhp * .45); B.pet.ko = false; battleQ.push({ t: 'pact', k: 'pounce' }, { t: 'dmg', who: 'foe', amt: 14, tags: ['Wolf Pup'] }); }
+  if (kind === 'stable') { tab = 'stable'; S.stable = { plot: 'thornwick:1', train: {}, breed: null, last: Date.now(), eggs: 0 }; S.plots['thornwick:1'] = S.plots['thornwick:1'] || { type: 'shop', slots: 3, clerk: false, sign: 0, stock: [], markup: 1.3, earned: 0, sold: 0, wages: 0 }; C.startTraining(S, S.pets[1].uid, 'atk', 'gold'); C.startTraining(S, S.pets[2].uid, 'spd', 'food'); S.hero.gold += 5000; C.startBreed(S, S.pets[3].uid, S.pets[5].uid); S.stable.breed.start -= 2400e3; petSel = S.pets[0].uid; }
+  if (kind === 'roster') tab = 'pets';
+  if (kind === 'v5region') { tab = 'map'; S.spot = 'a3'; S.act = 'explore'; }
+  render(); save(); return S;
+};
 
 // ---------- test hooks ----------
 window.__bq = { get S() { return S; }, set S(v) { S = v; }, get B() { return B; }, get fish() { return fishMG; }, get tab() { return tab; }, C, A, setTab, render, save, demo: k => demo(k), act, cast, startBattle, step, offline: f => offline(f), travel: id => { DO.travel(id); render(); }, input: () => { lastInput = Date.now(); }, idle: () => { lastInput = 0; }, finish: () => { let n = 0; while (B && !B.over && n++ < 200) battleQ.push(...C.act(S, B, C.autoAction(S, B))); while (battleQ.length) playEvent(battleQ.shift()); } };
