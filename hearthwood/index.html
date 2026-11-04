@@ -1,20 +1,33 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes"><title>Hearthwood</title>
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><meta name="theme-color" content="#07060f"><title>Hearthwood</title>
 <style>
 html,body{margin:0;height:100%;background:#07060f;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;font-family:sans-serif}
 #stage{position:absolute;left:0;top:0;width:384px;height:216px;transform-origin:0 0}
 #cv{position:absolute;left:0;top:0;width:384px;height:216px;image-rendering:pixelated;image-rendering:crisp-edges}
-#pads{position:absolute;inset:0;pointer-events:none;transition:opacity .3s}
-#pads.idle .vis{opacity:.33}
-body.kbd #pads{display:none}
-.hit{position:absolute;pointer-events:auto}
-.vis{position:absolute;box-sizing:border-box;background:rgba(18,22,58,.45);border:1px solid rgba(246,238,214,.7);display:flex;align-items:center;justify-content:center;transition:opacity .3s}
-.hit.on .vis{background:rgba(244,204,92,.75)}
-.vis svg{width:12px;height:12px;fill:rgba(246,238,214,.8)}
-.round .vis{border-radius:50%;color:rgba(255,216,120,.9);font:bold 14px sans-serif}
-.round.on .vis{background:rgba(176,120,32,.8)}
+/* pads (spec §1.4/D1): a fixed full-viewport layer in CSS px at the screen edges, not scaled with the game; hit boxes >= 48 */
+#pads{position:fixed;inset:0;pointer-events:none;z-index:10}
+body.kbd #pads,body.keys #pads{display:none}
+.hit{position:absolute;pointer-events:auto;touch-action:none}
+:root{--pad-a:.45}
+.vis{position:absolute;box-sizing:border-box;background:rgba(18,22,58,.9);border:2px solid #f6eed6;display:flex;align-items:center;justify-content:center;opacity:var(--pad-a);transition:opacity .3s}
+#pads.idle .vis{opacity:calc(var(--pad-a) * .44)}
+body.menu #pads .vis{opacity:.15} /* art-pass §6: pads fade to .15 while a menu owns the canvas */
+.hit.on .vis{opacity:.75;background:rgba(244,204,92,.95)}
+.vis svg{width:18px;height:18px;fill:#f6eed6}
+.round .vis{border-radius:50%;color:#ffd878;font:bold 20px sans-serif}
+#dpad{left:calc(var(--sal) + 16px);bottom:calc(var(--sab) + 16px);width:144px;height:144px}
+#dpad .arm{position:absolute;width:48px;height:48px;pointer-events:none}
+#dpad .arm .vis{left:2px;top:2px;width:44px;height:44px;border-radius:6px}
+[data-btn=up]{left:48px;top:0}[data-btn=down]{left:48px;top:96px}[data-btn=left]{left:0;top:48px}[data-btn=right]{left:96px;top:48px}
+[data-btn=A]{right:calc(var(--sar) + 16px);bottom:calc(var(--sab) + 72px);width:64px;height:64px}[data-btn=A] .vis{left:4px;top:4px;width:56px;height:56px}
+[data-btn=B]{right:calc(var(--sar) + 88px);bottom:calc(var(--sab) + 20px);width:56px;height:56px}[data-btn=B] .vis{left:4px;top:4px;width:48px;height:48px}
+[data-btn=M]{right:calc(var(--sar) + 12px);top:calc(var(--sat) + 12px);width:48px;height:48px}[data-btn=M] .vis{left:6px;top:6px;width:36px;height:36px;border-radius:6px}
+/* Options: handedness swap (d-pad right, A/B left) */
+body.lefty #dpad{left:auto;right:calc(var(--sar) + 16px)}
+body.lefty [data-btn=A]{right:auto;left:calc(var(--sal) + 16px)}body.lefty [data-btn=B]{right:auto;left:calc(var(--sal) + 88px)}
 #namegrid{position:fixed;left:0;right:0;bottom:0;height:45%;background:linear-gradient(#2c3478,#12163a);border-top:3px solid #f6eed6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;touch-action:none}
 .ng-row{display:flex;gap:4px}
 .ng-key{width:48px;height:44px;border:1px solid #7484e0;border-radius:4px;background:#12163a;color:#f0ecdc;font:bold 18px monospace;padding:0}
@@ -22,44 +35,41 @@ body.kbd #pads{display:none}
 .ng-key.wide{width:64px;font-size:14px}.ng-key.ok{background:#f4cc5c;color:#1c1020}
 /* safe areas (QA #8) */
 :root{--sat:env(safe-area-inset-top,0px);--sar:env(safe-area-inset-right,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px)}
-/* portrait (QA #7): pads leave the play field and sit in a control deck under it, >=44px targets, clear of the home bar */
-body.portrait #pads{position:fixed;left:var(--sal);right:var(--sar);bottom:var(--sab);top:auto;height:240px;inset:auto var(--sar) var(--sab) var(--sal)}
-body.portrait #pads .hit{transform:none}
-body.portrait [data-btn=up]{left:80px!important;top:16px!important;width:64px!important;height:64px!important}
-body.portrait [data-btn=down]{left:80px!important;top:144px!important;width:64px!important;height:64px!important}
-body.portrait [data-btn=left]{left:16px!important;top:80px!important;width:64px!important;height:64px!important}
-body.portrait [data-btn=right]{left:144px!important;top:80px!important;width:64px!important;height:64px!important}
-body.portrait [data-btn=A]{left:auto!important;right:20px!important;top:48px!important;width:80px!important;height:80px!important}
-body.portrait [data-btn=B]{left:auto!important;right:116px!important;top:120px!important;width:72px!important;height:72px!important}
-body.portrait #pads .vis{left:4px!important;top:4px!important;width:calc(100% - 8px)!important;height:calc(100% - 8px)!important}
-body.portrait #pads .vis svg{width:20px;height:20px}
-body.portrait .round .vis{font-size:22px}
-/* portrait (QA 3e4a3ff blocker): the 384px canvas can't scale past ~1x at 390 wide, so field menus render as this HTML panel in the space above the field: >=44px cells, 16px text */
-#mgrid{display:none;position:fixed;left:calc(var(--sal) + 8px);right:calc(var(--sar) + 8px);top:calc(var(--sat) + 8px);box-sizing:border-box;overflow:auto;background:linear-gradient(#2c3478,#1e2458 38%,#12163a);border:3px solid #f6eed6;box-shadow:0 0 0 1px #120a18,inset 0 0 0 1px #7484e0;border-radius:6px;padding:8px;font:bold 16px monospace;color:#f0ecdc;touch-action:none}
-.mg-title{color:#ffd878;margin:0 4px 8px}
-.mg-grid{display:grid;gap:4px}
-.mg-cell{min-height:52px;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:4px 10px;border:1px solid #7484e0;border-radius:4px;background:#12163a;color:#f0ecdc;font:inherit;text-align:left}
-.mg-r{align-self:flex-end;color:#ffd878;font-size:15px}
-.mg-cell.locked,.mg-cell.locked .mg-r{color:#8a86a8}
-.mg-cell.on,.mg-cell.on .mg-r{background:#f4cc5c;color:#1c1020}
-.mg-tag{border:1px solid currentColor;padding:0 3px;margin-left:6px;font-size:13px}
 #namegrid{padding-bottom:var(--sab);padding-left:var(--sal);padding-right:var(--sar)}
+/* landscape only (ui-fullscreen-interiors §1.5): phones in portrait get the rotate card; the game pauses */
+#rotate{display:none;position:fixed;inset:0;z-index:50;background:#07060f;color:#f0ecdc;font:bold 18px sans-serif;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center}
+body.rotate #rotate{display:flex}
+body.rotate #stage{visibility:hidden}
+#rotate svg{width:72px;height:72px}
+/* full screen (spec §1.1-1.2): the Play card before the title, the iPhone Add to Home Screen card, the return toast */
+#play{display:none;position:fixed;inset:0;z-index:60;background:#07060f;color:#f0ecdc;font:16px sans-serif;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:16px;box-sizing:border-box}
+body.play #play{display:flex}
+#play button{min-width:240px;min-height:64px;padding:0 20px;border:2px solid #f6eed6;border-radius:8px;background:#2c3478;color:#ffd878;font:bold 18px sans-serif}
+#play .link{min-height:44px;min-width:160px;background:none;border:0;color:#a8b0e8;font:15px sans-serif;text-decoration:underline}
+#play ol{margin:0;padding-left:22px;text-align:left;line-height:1.6}
+#toast{display:none;position:fixed;left:50%;top:calc(var(--sat) + 16px);transform:translateX(-50%);z-index:55;background:rgba(18,22,58,.92);border:2px solid #f6eed6;border-radius:6px;color:#f0ecdc;font:15px sans-serif;padding:10px 16px}
+body.toast #toast{display:block}
 </style></head><body>
-<div id="stage"><canvas id="cv" width="384" height="216"></canvas>
+<div id="play"></div><div id="toast">Tap to return to full screen</div>
+<div id="rotate" role="alert"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="18" rx="2" fill="none" stroke="#f6eed6" stroke-width="1.5"/><path d="M19 15a7 7 0 0 1-6 6" fill="none" stroke="#ffd878" stroke-width="1.5"/><path d="M12 19l1.5 2-2 1" fill="none" stroke="#ffd878" stroke-width="1.5"/></svg><div>Turn your phone sideways</div></div>
+<div id="stage"><canvas id="cv" width="384" height="216"></canvas></div>
 <div id="pads">
- <div class="hit" data-btn="up" style="left:30px;top:122px;width:28px;height:34px"><div class="vis" style="left:0;top:6px;width:28px;height:28px"><svg viewBox="0 0 10 10"><path d="M5 2L9 8H1z"/></svg></div></div>
- <div class="hit" data-btn="down" style="left:30px;top:184px;width:28px;height:34px"><div class="vis" style="left:0;top:0;width:28px;height:28px"><svg viewBox="0 0 10 10"><path d="M5 8L9 2H1z"/></svg></div></div>
- <div class="hit" data-btn="left" style="left:0;top:156px;width:30px;height:28px"><div class="vis" style="left:2px;top:0;width:28px;height:28px"><svg viewBox="0 0 10 10"><path d="M2 5L8 1V9z"/></svg></div></div>
- <div class="hit" data-btn="right" style="left:58px;top:156px;width:34px;height:28px"><div class="vis" style="left:0;top:0;width:28px;height:28px"><svg viewBox="0 0 10 10"><path d="M8 5L2 1V9z"/></svg></div></div>
- <div class="hit round" data-btn="A" style="left:340px;top:132px;width:44px;height:44px"><div class="vis" style="left:6px;top:6px;width:32px;height:32px">A</div></div>
- <div class="hit round" data-btn="B" style="left:305px;top:169px;width:42px;height:42px"><div class="vis" style="left:6px;top:6px;width:30px;height:30px">B</div></div>
-</div></div>
+ <div class="hit" id="dpad">
+  <div class="arm" data-btn="up"><div class="vis"><svg viewBox="0 0 10 10"><path d="M5 2L9 8H1z"/></svg></div></div>
+  <div class="arm" data-btn="down"><div class="vis"><svg viewBox="0 0 10 10"><path d="M5 8L9 2H1z"/></svg></div></div>
+  <div class="arm" data-btn="left"><div class="vis"><svg viewBox="0 0 10 10"><path d="M2 5L8 1V9z"/></svg></div></div>
+  <div class="arm" data-btn="right"><div class="vis"><svg viewBox="0 0 10 10"><path d="M8 5L2 1V9z"/></svg></div></div>
+ </div>
+ <div class="hit round" data-btn="A"><div class="vis">A</div></div>
+ <div class="hit round" data-btn="B"><div class="vis">B</div></div>
+ <div class="hit" data-btn="M" aria-label="Menu"><div class="vis"><svg viewBox="0 0 10 10"><path d="M1 2h8v1.4H1zM1 4.3h8v1.4H1zM1 6.6h8V8H1z"/></svg></div></div>
+</div>
 <script>
 // generated by tools/mkfont.py from Pixelify Sans (OFL). [advance, rows bitmask lsb=left]
-(function(root){const FONT={h:11,g:{" ":[2,[0,0,0,0,0,0,0,0,0,0,0]],"!":[2,[0,0,2,2,2,2,2,0,2,0,0]],"\"":[5,[0,0,10,10,0,0,0,0,0,0,0]],"#":[7,[0,0,36,36,126,36,36,126,36,0,0]],"$":[6,[0,8,28,34,2,28,32,34,28,8,0]],"%":[9,[0,0,132,78,36,16,136,452,132,0,0]],"&":[7,[0,0,28,34,20,8,20,34,92,0,0]],"'":[3,[0,0,2,2,0,0,0,0,0,0,0]],"(":[4,[0,8,8,4,4,2,2,4,4,8,8]],")":[4,[0,2,2,4,4,8,8,4,4,2,2]],"*":[3,[0,0,2,2,0,0,0,0,0,0,0]],"+":[6,[0,0,0,8,8,62,8,8,0,0,0]],",":[3,[0,0,0,0,0,0,0,0,2,2,0]],"-":[3,[0,0,0,0,0,0,14,0,0,0,0]],".":[2,[0,0,0,0,0,0,0,0,2,0,0]],"/":[5,[0,0,8,8,8,4,4,2,2,0,0]],"0":[6,[0,0,28,34,34,34,34,34,28,0,0]],"1":[4,[0,0,4,10,8,8,8,8,8,0,0]],"2":[6,[0,0,28,34,32,28,2,34,28,0,0]],"3":[6,[0,0,28,34,32,28,32,34,28,0,0]],"4":[6,[0,0,48,40,36,34,62,32,32,0,0]],"5":[6,[0,0,28,34,34,4,24,34,28,0,0]],"6":[6,[0,0,28,34,2,30,34,34,28,0,0]],"7":[6,[0,0,28,34,32,32,32,32,32,0,0]],"8":[6,[0,0,28,34,34,28,34,34,28,0,0]],"9":[6,[0,0,28,34,34,60,32,34,28,0,0]],":":[2,[0,0,0,0,0,2,0,2,0,0,0]],";":[3,[0,0,0,0,0,2,0,2,2,0,0]],"<":[6,[0,32,16,8,4,2,4,8,16,32,0]],"=":[6,[0,0,0,0,30,0,30,0,0,0,0]],">":[6,[0,2,4,8,16,32,16,8,4,2,0]],"?":[6,[0,0,28,34,34,24,8,0,8,0,0]],"@":[6,[0,0,0,0,28,42,22,10,12,0,0]],"A":[6,[0,0,8,20,34,34,62,34,34,0,0]],"B":[6,[0,0,28,34,34,26,34,34,28,0,0]],"C":[6,[0,0,28,34,34,2,34,34,28,0,0]],"D":[6,[0,0,14,18,34,34,34,18,14,0,0]],"E":[6,[0,0,28,34,2,14,2,34,28,0,0]],"F":[6,[0,0,30,34,2,14,2,2,2,0,0]],"G":[6,[0,0,28,34,34,10,50,34,28,0,0]],"H":[6,[0,0,34,34,42,62,34,34,34,0,0]],"I":[4,[0,0,14,4,4,4,4,4,14,0,0]],"J":[6,[0,0,28,32,32,32,34,34,28,0,0]],"K":[6,[0,0,36,18,10,6,10,18,34,0,0]],"L":[6,[0,0,2,2,2,2,2,34,28,0,0]],"M":[8,[0,0,68,106,106,82,82,82,66,0,0]],"N":[6,[0,0,34,38,42,42,42,50,34,0,0]],"O":[6,[0,0,28,34,34,34,34,34,28,0,0]],"P":[6,[0,0,28,34,34,34,30,2,2,0,0]],"Q":[6,[0,0,28,34,34,34,34,34,28,8,16]],"R":[6,[0,0,28,34,34,34,30,10,18,0,0]],"S":[6,[0,0,28,34,2,28,32,34,28,0,0]],"T":[6,[0,0,28,42,8,8,8,8,8,0,0]],"U":[6,[0,0,34,34,34,34,34,34,28,0,0]],"V":[6,[0,0,34,34,34,34,20,20,8,0,0]],"W":[8,[0,0,66,82,82,82,106,106,68,0,0]],"X":[6,[0,0,34,20,20,8,20,20,34,0,0]],"Y":[6,[0,0,34,34,20,8,8,8,8,0,0]],"Z":[6,[0,0,30,34,32,28,2,34,60,0,0]],"[":[4,[0,0,12,2,2,2,2,2,2,12,0]],"\\":[5,[0,0,2,2,4,4,8,8,8,0,0]],"]":[4,[0,0,6,8,8,8,8,8,8,6,0]],"^":[3,[0,0,2,0,0,0,0,0,0,0,0]],"_":[4,[0,0,0,0,0,0,0,0,14,0,0]],"`":[3,[0,2,2,0,0,0,0,0,0,0,0]],"a":[7,[0,0,0,0,28,34,34,34,92,0,0]],"b":[6,[0,0,2,2,30,34,34,34,28,0,0]],"c":[6,[0,0,0,0,28,34,2,34,28,0,0]],"d":[6,[0,0,32,32,60,34,34,34,28,0,0]],"e":[6,[0,0,0,0,28,34,14,34,28,0,0]],"f":[6,[0,0,28,34,2,14,2,2,2,0,0]],"g":[6,[0,0,0,0,28,34,34,60,32,34,28]],"h":[6,[0,0,2,2,26,38,34,34,34,0,0]],"i":[2,[0,0,2,0,2,2,2,2,2,0,0]],"j":[5,[0,0,0,0,16,16,16,18,12,0,0]],"k":[6,[0,0,2,2,34,26,6,26,34,0,0]],"l":[2,[0,0,2,2,2,2,2,2,2,0,0]],"m":[8,[0,0,0,0,110,82,82,82,82,0,0]],"n":[6,[0,0,0,0,30,34,34,34,34,0,0]],"o":[6,[0,0,0,0,28,34,34,34,28,0,0]],"p":[6,[0,0,0,0,28,34,34,34,30,2,2]],"q":[6,[0,0,0,0,28,34,34,34,60,32,32]],"r":[6,[0,0,0,0,28,34,2,2,2,0,0]],"s":[6,[0,0,0,0,28,2,28,16,30,0,0]],"t":[7,[0,0,4,4,62,4,4,68,56,0,0]],"u":[6,[0,0,0,0,34,34,34,34,28,0,0]],"v":[6,[0,0,0,0,34,34,20,20,8,0,0]],"w":[8,[0,0,0,0,82,82,82,82,110,0,0]],"x":[6,[0,0,0,0,34,20,8,20,34,0,0]],"y":[6,[0,0,0,0,34,34,34,60,32,34,28]],"z":[6,[0,0,0,0,62,16,8,4,62,0,0]],"{":[5,[0,8,20,4,4,2,4,4,20,8,0]],"|":[2,[0,0,2,2,2,2,2,2,2,0,0]],"}":[5,[0,4,10,8,8,16,8,8,10,4,0]],"~":[6,[0,0,0,0,0,0,28,0,0,0,0]]}};if(typeof module!=="undefined")module.exports=FONT;else root.FONT=FONT;})(this);
+(function(root){const FONT={h:11,g:{" ":[2,[0,0,0,0,0,0,0,0,0,0,0]],"!":[2,[0,0,2,2,2,2,2,0,2,0,0]],"\"":[5,[0,0,10,10,0,0,0,0,0,0,0]],"#":[7,[0,0,36,36,126,36,36,126,36,0,0]],"$":[6,[0,8,28,34,2,28,32,34,28,8,0]],"%":[9,[0,0,132,78,36,16,136,452,132,0,0]],"&":[7,[0,0,28,34,20,8,20,34,92,0,0]],"'":[3,[0,0,2,2,0,0,0,0,0,0,0]],"(":[4,[0,8,8,4,4,2,2,4,4,8,8]],")":[4,[0,2,2,4,4,8,8,4,4,2,2]],"*":[3,[0,0,2,2,0,0,0,0,0,0,0]],"+":[6,[0,0,0,8,8,62,8,8,0,0,0]],",":[3,[0,0,0,0,0,0,0,0,2,2,0]],"-":[3,[0,0,0,0,0,0,14,0,0,0,0]],".":[2,[0,0,0,0,0,0,0,0,2,0,0]],"/":[5,[0,0,8,8,8,4,4,2,2,0,0]],"0":[6,[0,0,28,34,34,34,34,34,28,0,0]],"1":[4,[0,0,4,10,8,8,8,8,8,0,0]],"2":[6,[0,0,28,34,32,28,2,34,28,0,0]],"3":[6,[0,0,28,34,32,28,32,34,28,0,0]],"4":[6,[0,0,48,40,36,34,62,32,32,0,0]],"5":[6,[0,0,62,2,30,32,32,34,28,0,0]],"6":[6,[0,0,28,34,2,30,34,34,28,0,0]],"7":[6,[0,0,28,34,32,32,32,32,32,0,0]],"8":[6,[0,0,28,34,34,28,34,34,28,0,0]],"9":[6,[0,0,28,34,34,60,32,34,28,0,0]],":":[2,[0,0,0,0,0,2,0,2,0,0,0]],";":[3,[0,0,0,0,0,2,0,2,2,0,0]],"<":[6,[0,32,16,8,4,2,4,8,16,32,0]],"=":[6,[0,0,0,0,30,0,30,0,0,0,0]],">":[6,[0,2,4,8,16,32,16,8,4,2,0]],"?":[6,[0,0,28,34,34,24,8,0,8,0,0]],"@":[6,[0,0,0,0,28,42,22,10,12,0,0]],"A":[6,[0,0,8,20,34,34,62,34,34,0,0]],"B":[6,[0,0,28,34,34,26,34,34,28,0,0]],"C":[6,[0,0,28,34,34,2,34,34,28,0,0]],"D":[6,[0,0,14,18,34,34,34,18,14,0,0]],"E":[6,[0,0,28,34,2,14,2,34,28,0,0]],"F":[6,[0,0,30,34,2,14,2,2,2,0,0]],"G":[6,[0,0,28,34,34,10,50,34,28,0,0]],"H":[6,[0,0,34,34,42,62,34,34,34,0,0]],"I":[4,[0,0,14,4,4,4,4,4,14,0,0]],"J":[6,[0,0,28,32,32,32,34,34,28,0,0]],"K":[6,[0,0,36,18,10,6,10,18,34,0,0]],"L":[6,[0,0,2,2,2,2,2,34,28,0,0]],"M":[8,[0,0,68,106,106,82,82,82,66,0,0]],"N":[6,[0,0,34,38,42,42,42,50,34,0,0]],"O":[6,[0,0,28,34,34,34,34,34,28,0,0]],"P":[6,[0,0,28,34,34,34,30,2,2,0,0]],"Q":[6,[0,0,28,34,34,34,34,34,28,8,16]],"R":[6,[0,0,28,34,34,34,30,10,18,0,0]],"S":[6,[0,0,28,34,2,28,32,34,28,0,0]],"T":[6,[0,0,28,42,8,8,8,8,8,0,0]],"U":[6,[0,0,34,34,34,34,34,34,28,0,0]],"V":[6,[0,0,34,34,34,34,20,20,8,0,0]],"W":[8,[0,0,66,82,82,82,106,106,68,0,0]],"X":[6,[0,0,34,20,20,8,20,20,34,0,0]],"Y":[6,[0,0,34,34,20,8,8,8,8,0,0]],"Z":[6,[0,0,30,34,32,28,2,34,60,0,0]],"[":[4,[0,0,12,2,2,2,2,2,2,12,0]],"\\":[5,[0,0,2,2,4,4,8,8,8,0,0]],"]":[4,[0,0,6,8,8,8,8,8,8,6,0]],"^":[3,[0,0,2,0,0,0,0,0,0,0,0]],"_":[4,[0,0,0,0,0,0,0,0,14,0,0]],"`":[3,[0,2,2,0,0,0,0,0,0,0,0]],"a":[7,[0,0,0,0,28,34,34,34,92,0,0]],"b":[6,[0,0,2,2,30,34,34,34,28,0,0]],"c":[6,[0,0,0,0,28,34,2,34,28,0,0]],"d":[6,[0,0,32,32,60,34,34,34,28,0,0]],"e":[6,[0,0,0,0,28,34,14,34,28,0,0]],"f":[6,[0,0,28,34,2,14,2,2,2,0,0]],"g":[6,[0,0,0,0,28,34,34,60,32,34,28]],"h":[6,[0,0,2,2,26,38,34,34,34,0,0]],"i":[2,[0,0,2,0,2,2,2,2,2,0,0]],"j":[5,[0,0,0,0,16,16,16,18,12,0,0]],"k":[6,[0,0,2,2,34,26,6,26,34,0,0]],"l":[2,[0,0,2,2,2,2,2,2,2,0,0]],"m":[8,[0,0,0,0,110,82,82,82,82,0,0]],"n":[6,[0,0,0,0,30,34,34,34,34,0,0]],"o":[6,[0,0,0,0,28,34,34,34,28,0,0]],"p":[6,[0,0,0,0,28,34,34,34,30,2,2]],"q":[6,[0,0,0,0,28,34,34,34,60,32,32]],"r":[6,[0,0,0,0,28,34,2,2,2,0,0]],"s":[6,[0,0,0,0,28,2,28,16,30,0,0]],"t":[7,[0,0,4,4,62,4,4,68,56,0,0]],"u":[6,[0,0,0,0,34,34,34,34,28,0,0]],"v":[6,[0,0,0,0,34,34,20,20,8,0,0]],"w":[8,[0,0,0,0,82,82,82,82,110,0,0]],"x":[6,[0,0,0,0,34,20,8,20,34,0,0]],"y":[6,[0,0,0,0,34,34,34,60,32,34,28]],"z":[6,[0,0,0,0,62,16,8,4,62,0,0]],"{":[5,[0,8,20,4,4,2,4,4,20,8,0]],"|":[2,[0,0,2,2,2,2,2,2,2,0,0]],"}":[5,[0,4,10,8,8,16,8,8,10,4,0]],"~":[6,[0,0,0,0,0,0,28,0,0,0,0]]}};if(typeof module!=="undefined")module.exports=FONT;else root.FONT=FONT;})(this);
 
 </script><script>
-// text.js — all approved M1 lines (design/lore/m1-dialogue.md v0.4), verbatim. Swap this file to change dialogue.
+// text.js — all approved M1 lines (design/lore/m1-dialogue.md v0.5), verbatim. Swap this file to change dialogue.
 // All lines, none skipped. Tokens: {hero}.
 (function (root) {
   const TEXT = {
@@ -107,6 +117,7 @@ body.portrait .round .vis{font-size:22px}
     "m1.hal.repaired": "Good as the day I made it. Try not to undo my work too quick.",
     "m1.hal.partial": "Your purse won't stretch to the whole job. I'll mend what it covers.",
     "m1.fitch.pity": "Put your coin away, there's none to put. Rest tonight, and pay me when your luck turns.",
+    "m1.hal.brokewarn": "Pay me this and you can't pay Fitch, and you need that bed. Steel can wait, you can't.",
   };
   const T = (id, vars = {}) => { const s = TEXT[id]; if (s == null) throw Error('missing text ' + id); return s.replace(/\{(\w+)\}/g, (m, k) => vars[k] != null ? vars[k] : m); };
   const Text = { TEXT, T, SKIPPED: [] };
@@ -243,11 +254,36 @@ body.portrait .round .vis{font-size:22px}
   }
   // Apply a finished battle to the character. Returns { coin, xp } gained or penalty info.
   function settleBattle(ch, b, rng) {
-    ch.hp = b.p.hp; ch.herbs = b.p.herbs; ch.pityRest = false; // death spec §3a: an unused free rest is lost at the next fight
-    if (b.over === 'win') { const d = rollDrops(b.e.id, rng); ch.coin += d.coin; const lost = []; for (const it of d.items) { const t = addStack(ch, it.id, it.qty); if (t < it.qty) lost.push({ id: it.id, qty: it.qty - t }); } ch.xp += b.e.xp; return { coin: d.coin, items: d.items, lost, xp: b.e.xp, levelUp: checkLevel(ch) }; }
-    if (b.over === 'lose') return deathPenalty(ch);
+    ch.hp = b.p.hp; ch.herbs = b.p.herbs; // ui-fullscreen-interiors D11: a pending free rest is NOT lost at a fight; only No at Fitch or leaving the inn loses it
+    if (b.over === 'win') { const be = bestOf(ch, b.e.id); be.beaten++; }
+    if (b.over === 'lose') { ch.deaths = (ch.deaths || 0) + 1; }
+    if (b.over === 'win') { const d = rollDrops(b.e.id, rng); ch.coin += d.coin; const lost = []; for (const it of d.items) { const t = addStack(ch, it.id, it.qty); if (t < it.qty) lost.push({ id: it.id, qty: it.qty - t }); } ch.xp += b.e.xp; noteDrops(ch, b.e.id, d.items); logLine(ch, 'Beat a ' + b.e.name + (d.items.length ? ': ' + d.items.map(i => i.qty + ' ' + ITEMS[i.id].name).join(', ') : '') + '.'); return { coin: d.coin, items: d.items, lost, xp: b.e.xp, levelUp: checkLevel(ch) }; }
+    if (b.over === 'lose') { const r = deathPenalty(ch); logLine(ch, 'Fell to a ' + b.e.name + '. Lost ' + fmtMoney(r.lost) + '.'); return r; }
     return {};
   }
+  // ui-fullscreen-interiors §2.3 Journal: bestiary (seen / beaten / drops seen) and a 20-line log. Pure helpers.
+  const LOG_MAX = 20, num = v => typeof v === 'number' && isFinite(v);
+  function logLine(ch, line) { ch.log = Array.isArray(ch.log) ? ch.log : []; ch.log.push(String(line)); if (ch.log.length > LOG_MAX) ch.log.splice(0, ch.log.length - LOG_MAX); }
+  function bestOf(ch, id) { ch.best = ch.best && typeof ch.best === 'object' ? ch.best : {}; const e = ch.best[id] = ch.best[id] || { seen: 0, beaten: 0, drops: [] }; return e; }
+  function sawEnemy(ch, id) { bestOf(ch, id).seen++; }
+  function noteDrops(ch, id, items) { const e = bestOf(ch, id); for (const it of items) if (!e.drops.includes(it.id)) e.drops.push(it.id); }
+  // §2.3 Items: Use (herb out of battle), Drop (confirm in the UI; no-drop items refused), Sort.
+  const HERB_HEAL = 10;
+  function useHerb(ch) { if (!(ch.herbs > 0)) return { ok: false, msg: 'You have no herbs.' }; if (ch.hp >= ch.maxHp) return { ok: false, msg: "You're already at full HP." };
+    const h = Math.min(HERB_HEAL, ch.maxHp - ch.hp); ch.hp += h; ch.herbs--; return { ok: true, heal: h, msg: 'You chew a herb. +' + h + ' HP.' }; }
+  const CATS = { use: 0, gear: 1, material: 2, fish: 3 }, catOf = id => id === 'herb' ? 'use' : ITEMS[id] && ITEMS[id].slot ? 'gear' : ITEMS[id] && ITEMS[id].loot ? 'material' : 'use';
+  function dropItem(ch, id) { if (ITEMS[id] && ITEMS[id].noDrop) return { ok: false, msg: "You can't drop that." };
+    if (id === 'herb') { ch.herbs = 0; return { ok: true }; } const i = (ch.bag || []).findIndex(s => s.id === id); if (i < 0) return { ok: false }; ch.bag.splice(i, 1); return { ok: true }; }
+  function sortBag(ch) { ch.bag = (ch.bag || []).slice().sort((a, b) => CATS[catOf(a.id)] - CATS[catOf(b.id)] || ITEMS[a.id].name.localeCompare(ITEMS[b.id].name)); }
+  // §2.3 Equipment: swap 1-for-1 with the bag. Gear in the bag keeps its pips.
+  function equipFromBag(ch, id) { const it = ITEMS[id], i = (ch.bag || []).findIndex(s => s.id === id); if (!it || !it.slot || i < 0) return { ok: false };
+    if (!meetsReq(ch, id)) return { ok: false, gate: true, msg: 'Needs ' + Object.entries(it.req).filter(([s, v]) => ch[s] < v).map(([s, v]) => s.toUpperCase() + ' ' + v).join(', ') + '.' };
+    const st = ch.bag[i], old = ch[it.slot], oldPips = ch.dur[it.slot]; if (st.qty > 1) st.qty--; else ch.bag.splice(i, 1);
+    ch[it.slot] = id; ch.dur[it.slot] = num(st.pips) ? st.pips : MAX_PIPS;
+    if (old && ITEMS[old]) { ch.bag.push({ id: old, qty: 1, pips: oldPips, seq: ch.seq = (ch.seq || 0) + 1 }); } return { ok: true, msg: 'You equip the ' + it.name + '.' }; }
+  function unequip(ch, slot) { const id = ch[slot]; if (!id || !ITEMS[id]) return { ok: false, msg: 'Nothing to take off.' };
+    if (slotsUsed(ch) >= BAG.slots || (ch.bag || []).some(s => s.id === id)) return { ok: false, msg: 'No room in your bag.' };
+    ch.bag.push({ id, qty: 1, pips: ch.dur[slot], seq: ch.seq = (ch.seq || 0) + 1 }); ch[slot] = ''; ch.dur[slot] = MAX_PIPS; return { ok: true, msg: 'You take off the ' + ITEMS[id].name + '.' }; }
   function checkLevel(ch) { if (!FLAGS.levelUp || ch.lvl >= MAX_LVL || ch.xp < LV2_XP) return false; ch.lvl = 2; ch.maxHp += 2; ch.hp += 2; ch.points = (ch.points || 0) + 1; return true; }
   function spendPoint(ch, stat) { if (!STATS.includes(stat) || !(ch.points > 0)) return false; ch[stat]++; ch.points--; return true; }
   const rollRange = ([a, b], rng) => a + Math.floor(rng() * (b - a + 1));
@@ -313,11 +349,14 @@ body.portrait .round .vis{font-size:22px}
     return { ok: true, msg: 'You bought the ' + it.name + '.' };
   }
   const lootValue = ch => (ch.bag || []).reduce((a, s) => a + (ITEMS[s.id] && ITEMS[s.id].sell || 0) * s.qty, 0);
+  // spec A §3.3 / D16: sell part of one stack (qty 1 / 10 / all).
+  function sellStack(ch, id, qty) { const it = ITEMS[id], s = (ch.bag || []).find(x => x.id === id); if (!it || !it.sell) return { ok: false, msg: "Wenna doesn't buy that." }; if (!s) return { ok: false, msg: 'You have none.' };
+    const q = Math.max(1, Math.min(s.qty, qty | 0)); s.qty -= q; if (!s.qty) ch.bag.splice(ch.bag.indexOf(s), 1); ch.coin += q * it.sell; return { ok: true, coin: q * it.sell, msg: 'Sold ' + q + ' ' + it.name + ' for ' + fmtMoney(q * it.sell) + '.' }; }
   function sellLoot(ch) { const v = lootValue(ch); if (!v) return { ok: false, msg: 'You have nothing to sell.' }; ch.bag = (ch.bag || []).filter(s => !(ITEMS[s.id] && ITEMS[s.id].sell)); ch.coin += v; return { ok: true, coin: v, msg: 'Sold your loot for ' + fmtMoney(v) + '.' }; }
   // Economy delta §1: flat 4c, refused (no charge) at full HP. innPrice = what a rest costs right now (0 = refused, full HP).
   const innPrice = ch => ch.hp >= ch.maxHp ? 0 : INN_PRICE;
   const pityNow = ch => !!ch.pityRest && ch.coin < INN_PRICE;
-  // QA f25313a #2: a free rest can't be banked. Leaving Fitch without taking it forfeits it (so does the next fight, settleBattle).
+  // QA f25313a #2: a free rest can't be banked. Saying No to Fitch, or leaving the inn interior, forfeits it (D11; a fight no longer does).
   function declineInn(ch) { const had = !!ch.pityRest; ch.pityRest = false; return had; }
   function rest(ch) { if (ch.hp >= ch.maxHp) return { ok: false, full: true, msg: "You're already rested." }; if (ch.pityRest && ch.coin >= INN_PRICE) ch.pityRest = false; // QA f25313a #1: coin only, checked again at the inn, so selling the pack can't farm it
     if (ch.pityRest) { ch.pityRest = false; ch.hp = ch.maxHp; return { ok: true, free: true, msg: 'No charge this once. HP fully restored.' }; }
@@ -326,7 +365,6 @@ body.portrait .round .vis{font-size:22px}
   function deserialize(str) { const o = JSON.parse(str); if (!o || o.version !== SAVE_VERSION) throw Error('save version mismatch'); return o; }
   // Tolerant load (QA d8e477a #3): migrates v1 -> v2, fills missing optional fields, rejects anything unusable.
   // Returns { ok: true, state } or { ok: false, error }. Never throws.
-  const num = v => typeof v === 'number' && isFinite(v);
   // Keep the last 3 bad saves: key.bak (newest), key.bak2, key.bak3 (oldest is dropped). storage: getItem/setItem/removeItem.
   const BAK_KEEP = 3, bakKey = (key, i) => key + '.bak' + (i > 1 ? i : '');
   function rotateBackup(storage, key, raw) {
@@ -340,6 +378,11 @@ body.portrait .round .vis{font-size:22px}
     if (!e || !ENEMIES[e.id] || !['hp', 'maxHp', 'atk', 'def', 'dex'].every(k => num(e[k])) || e.hp <= 0 || e.maxHp <= 0) return 'enemy';
     if (!num(bt.b.round) || bt.b.round < 0 || bt.b.over) return 'round/over'; return null;
   }
+  // §2.1 cursor memory per tab (saved with the game). Anything odd is dropped, never an error.
+  const MENU_TABS = ['status', 'equip', 'items', 'skills', 'craft', 'props', 'journal', 'options'];
+  function validMenu(m) { if (!m || typeof m !== 'object') return null; const out = { tab: MENU_TABS.includes(m.tab) ? m.tab : 'status', cur: {} };
+    if (m.cur && typeof m.cur === 'object') for (const t of MENU_TABS) { const c = m.cur[t]; if (c && num(c.i)) out.cur[t] = { i: Math.max(-1, c.i | 0), scroll: num(c.scroll) ? Math.max(0, c.scroll | 0) : 0, sub: typeof c.sub === 'string' ? c.sub.slice(0, 16) : undefined }; }
+    return out; }
   function parseSave(str) {
     try {
       const o = JSON.parse(str);
@@ -350,24 +393,28 @@ body.portrait .round .vis{font-size:22px}
       for (const k of ['hp', 'maxHp', 'coin', 'herbs', ...STATS]) if (!num(c[k])) return { ok: false, error: 'bad char.' + k };
       if (c.maxHp <= 0) return { ok: false, error: 'char.maxHp <= 0' }; if (c.hp <= 0) return { ok: false, error: 'char.hp <= 0' };
       if (o.battle != null) { const e = validBattle(o.battle); if (e) return { ok: false, error: 'bad battle: ' + e }; }
-      if (!ITEMS[c.weapon]) c.weapon = 'club'; if (!ITEMS[c.armor]) c.armor = 'clothes';
+      if (c.weapon !== '' && !ITEMS[c.weapon]) c.weapon = 'club'; if (c.armor !== '' && !ITEMS[c.armor]) c.armor = 'clothes'; // '' = slot left empty in the Equipment page
       if (!Array.isArray(c.bag)) c.bag = []; { const mg = new Map(); for (const s of c.bag.filter(s => s && ITEMS[s.id] && num(s.qty) && s.qty > 0)) { const q = Math.floor(s.qty), m = mg.get(s.id); if (m) m.qty = Math.min(BAG.stackMax, m.qty + q); else mg.set(s.id, { ...s, qty: Math.min(BAG.stackMax, q) }); }
         c.bag = [...mg.values()]; } // QA f25313a #3 + bag §5: clamp to 99; QA 8b61df2 minor 2: duplicate ids merge into one stack (first slot kept), overflow past 99 dropped like the clamp
       c.herbs = Math.max(0, Math.min(BAG.stackMax, Math.floor(c.herbs))); c.bag = c.bag.slice(0, BAG.slots - (c.herbs > 0 ? 1 : 0)); // keep the first 20 slots
       if (!c.dur || !num(c.dur.weapon) || !num(c.dur.armor)) c.dur = { weapon: MAX_PIPS, armor: MAX_PIPS }; // old saves: new gear
       c.dur.weapon = Math.max(0, Math.min(MAX_PIPS, c.dur.weapon | 0)); c.dur.armor = Math.max(0, Math.min(MAX_PIPS, c.dur.armor | 0));
+      c.deaths = num(c.deaths) ? Math.max(0, c.deaths | 0) : 0; c.playMs = num(c.playMs) ? Math.max(0, c.playMs) : 0;
+      c.log = Array.isArray(c.log) ? c.log.filter(l => typeof l === 'string').slice(-LOG_MAX) : [];
+      { const b = {}; if (c.best && typeof c.best === 'object') for (const [k, e] of Object.entries(c.best)) if (ENEMIES[k] && e) b[k] = { seen: num(e.seen) ? e.seen | 0 : 0, beaten: num(e.beaten) ? e.beaten | 0 : 0, drops: Array.isArray(e.drops) ? e.drops.filter(d => ITEMS[d]) : [] }; c.best = b; }
+      for (const s of c.bag) if (s.pips != null) s.pips = num(s.pips) ? Math.max(0, Math.min(MAX_PIPS, s.pips | 0)) : MAX_PIPS;
       c.pityRest = c.pityRest === true; if (!num(c.seq)) c.seq = 0; if (!num(c.herbSeq)) c.herbSeq = 0;
       if (!num(c.lvl)) c.lvl = 1; if (!num(c.xp)) c.xp = 0; if (typeof c.name !== 'string' || !c.name) c.name = 'Joe'; if (c.body !== 'jill') c.body = 'joe';
       c.coin = Math.max(0, Math.floor(c.coin)); c.hp = Math.max(0, Math.min(c.maxHp, c.hp));
-      const st = { version: SAVE_VERSION, char: c, map: o.map === 'town' ? 'town' : 'overworld', x: num(o.x) ? o.x | 0 : NaN, y: num(o.y) ? o.y | 0 : NaN, dir: ['up', 'down', 'left', 'right'].includes(o.dir) ? o.dir : 'down', time: num(o.time) ? o.time : 0,
+      const st = { version: SAVE_VERSION, char: c, map: ['town', 'inn', 'shop', 'forge'].includes(o.map) ? o.map : 'overworld', /* interiors (spec A §3) */ x: num(o.x) ? o.x | 0 : NaN, y: num(o.y) ? o.y | 0 : NaN, dir: ['up', 'down', 'left', 'right'].includes(o.dir) ? o.dir : 'down', time: num(o.time) ? o.time : 0,
         bums: Array.isArray(o.bums) ? o.bums.filter(b => b && num(b.hx) && num(b.hy)).map(b => ({ x: num(b.x) ? b.x : b.hx, y: num(b.y) ? b.y : b.hy, hx: b.hx, hy: b.hy, alive: b.alive !== false, respawnAt: num(b.respawnAt) ? b.respawnAt : 0 })) : null,
         pack: o.pack && ['town', 'overworld'].includes(o.pack.map) && num(o.pack.x) && num(o.pack.y) && ITEMS[o.pack.id] && num(o.pack.qty) && o.pack.qty >= 1 ? { map: o.pack.map, x: o.pack.x | 0, y: o.pack.y | 0, id: o.pack.id, qty: Math.min(BAG.stackMax, Math.floor(o.pack.qty)) } : null, // old saves: no pack
-        battle: o.battle || null };
+        battle: o.battle || null, menu: validMenu(o.menu) };
       return { ok: true, state: st, migrated: o.version !== SAVE_VERSION };
     } catch (e) { return { ok: false, error: String(e.message || e) }; }
   }
 
-  const Rules = { FLAGS, LV2_XP, checkLevel, spendPoint, Combat, RACES, STATS, ITEMS, ENEMIES, DROPS, rollDrops, INN_PRICE, innPrice, pityNow, START_COIN, START_HERBS, MAX_ROUNDS, SAVE_VERSION, mulberry32, toGSC, fromGSC, fmtMoney, parseMoney, newChar, derive, meetsReq, dodgeChance, hitChance, newBattle, aiChoose, refuse, battleRound, settleBattle, DEATH, BAG, slotsUsed, roomFor, MAX_PIPS, wearPenalty, gearBonus, addStack, pickDropStack, pickupPack, repair, repairCost, repairWarn, REPAIR_PER_PIP, deathPenalty, buy, lootValue, sellLoot, rest, declineInn, serialize, deserialize, parseSave, rotateBackup, bakKey, BAK_KEEP };
+  const Rules = { sellStack, MENU_TABS, validMenu, logLine, bestOf, sawEnemy, noteDrops, useHerb, HERB_HEAL, catOf, dropItem, sortBag, equipFromBag, unequip, FLAGS, LV2_XP, checkLevel, spendPoint, Combat, RACES, STATS, ITEMS, ENEMIES, DROPS, rollDrops, INN_PRICE, innPrice, pityNow, START_COIN, START_HERBS, MAX_ROUNDS, SAVE_VERSION, mulberry32, toGSC, fromGSC, fmtMoney, parseMoney, newChar, derive, meetsReq, dodgeChance, hitChance, newBattle, aiChoose, refuse, battleRound, settleBattle, DEATH, BAG, slotsUsed, roomFor, MAX_PIPS, wearPenalty, gearBonus, addStack, pickDropStack, pickupPack, repair, repairCost, repairWarn, REPAIR_PER_PIP, deathPenalty, buy, lootValue, sellLoot, rest, declineInn, serialize, deserialize, parseSave, rotateBackup, bakKey, BAK_KEEP };
   if (typeof module !== 'undefined') module.exports = Rules; else root.Rules = Rules;
 })(this);
 
@@ -405,24 +452,36 @@ body.portrait .round .vis{font-size:22px}
     for (let x = 1; x < W - 1; x++) t[1][x] = ',';
     for (const [x, y] of [[1, 15], [2, 15], [1, 14], [23, 15], [24, 15], [24, 14], [1, 8], [1, 9], [24, 8], [24, 9]]) t[y][x] = ',';
     const buildings = [
-      { id: 'inn', name: 'Inn', x: 2, y: 2, w: 4, h: 3, roof: 'terracotta', sign: 'inn' },
-      { id: 'shop', name: 'General Store', x: 19, y: 2, w: 5, h: 3, roof: 'teal', sign: 'bag' },
-      { id: 'house', name: 'House', x: 8, y: 9, w: 4, h: 3, roof: 'plum' },
-      { id: 'smith', name: 'Smithy', x: 15, y: 10, w: 4, h: 3, roof: 'terracotta', sign: 'anvil' },
+      { id: 'inn', name: 'Inn', x: 2, y: 2, w: 5, h: 4, roof: 'terracotta', sign: 'inn', interior: 'inn' },
+      { id: 'shop', name: 'General Store', x: 19, y: 2, w: 5, h: 4, roof: 'teal', sign: 'bag', interior: 'shop' },
+      { id: 'house', name: 'House', x: 8, y: 9, w: 5, h: 4, roof: 'rose' },
+      { id: 'smith', name: 'Smithy', x: 15, y: 10, w: 5, h: 4, roof: 'terracotta', sign: 'anvil', interior: 'forge' },
     ];
-    for (const b of buildings) for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) t[y][x] = 'B';
+    for (const b of buildings) { for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) t[y][x] = 'B';
+      b.door = { x: b.x + (b.w >> 1), y: b.y + b.h }; if (b.interior) t[b.door.y][b.door.x] = 'D'; } // spec A §3.1: a door tile D in the street under the facade door
     t[5][12] = 'o'; t[6][8] = 'l'; t[6][16] = 'l'; t[13][6] = 'l'; t[13][20] = 'l';
-    t[3][7] = 'c'; t[4][7] = 'r'; t[3][17] = 'c'; t[12][14] = 'r'; t[12][19] = 'c';
+    t[3][7] = 'c'; t[4][7] = 'r'; t[3][17] = 'c'; t[12][14] = 'r'; t[13][21] = 'c'; // art-pass §9.1: 5x4 houses
     t[H - 1][12] = 'E'; t[H - 1][13] = 'E'; t[16][14] = 'S';
     const npcs = [
-      { id: 'innkeeper', x: 5, y: 5, look: 'inn', dir: 'down' },
-      { id: 'shopkeeper', x: 21, y: 5, look: 'shop', dir: 'down' },
       { id: 'villager', x: 10, y: 14, look: 'villager', dir: 'down' },
-      { id: 'smith', x: 17, y: 13, look: 'smith', dir: 'down' },
+      { id: 'miller', x: 5, y: 10, look: 'miller', dir: 'right' }, { id: 'weaver', x: 20, y: 8, look: 'weaver', dir: 'left' }, // art-pass §5.4 variety (new skin/hair/tunic bases) // town folk stay outside; Fitch, Wenna and Hal are behind their counters (§3.1)
     ];
     return { id: 'town', name: 'Kettleby', W, H, t, oob: ',', buildings, npcs, signs: [{ x: 14, y: 16, text: 'm1.sign.kettleby' }], start: { x: 12, y: 16, dir: 'up' } };
   }
-  const PASS = { g: 1, f: 1, h: 1, p: 1, b: 1, T: 1, '.': 1, ',': 1, E: 1 };
+  // Interiors (spec A §3): 14x9 rooms. '#' wall, '_' floor, K counter, m doormat (exit), Z bed, H shelf, A anvil, F hearth, Y table.
+  const ROOMS = {
+    inn: { name: "Fitch's Inn", floor: 'plank', rows: ['##############', '#Z___________#', '#____________#', '#____KKK_____#', '#____________#', '#_Y________Y_#', '#____________#', '#______m_____#', '##############'],
+      npcs: [{ id: 'innkeeper', x: 6, y: 2, look: 'inn', dir: 'down' }], bed: { x: 1, y: 1 } },
+    shop: { name: "Wenna's Store", floor: 'plank', rows: ['##############', '#HHH______HHH#', '#____________#', '#____KKK_____#', '#____________#', '#____________#', '#_Y__________#', '#______m_____#', '##############'],
+      npcs: [{ id: 'shopkeeper', x: 6, y: 2, look: 'shop', dir: 'down' }] },
+    forge: { name: "Hal's Forge", floor: 'stone', rows: ['##############', '#_________FF_#', '#____________#', '#__KKK_______#', '#________A___#', '#____________#', '#____________#', '#______m_____#', '##############'],
+      npcs: [{ id: 'smith', x: 4, y: 2, look: 'smith', dir: 'down' }] },
+  };
+  function makeInterior(id) { const r = ROOMS[id], t = r.rows.map(row => row.split('')), H = t.length, W = t[0].length; let mat;
+    t.forEach((row, y) => row.forEach((c, x) => { if (c === 'm') mat = { x, y }; }));
+    return { id, name: r.name, interior: true, floor: r.floor, W, H, t, oob: '#', npcs: r.npcs.map(n => ({ ...n })), mat, bed: r.bed || null, signs: [], start: { x: mat.x, y: mat.y, dir: 'up' } }; }
+  const INTERIORS = Object.keys(ROOMS);
+  const PASS = { g: 1, f: 1, h: 1, p: 1, b: 1, T: 1, '.': 1, ',': 1, E: 1, D: 1, _: 1, m: 1, Z: 1 };
   const tileAt = (m, x, y) => (m.t[y] && m.t[y][x]) || m.oob;
   const passable = (m, x, y) => !!PASS[tileAt(m, x, y)] && y >= 0 && x >= 0 && y < m.H && x < m.W;
   // QA d8e477a #4: a loaded position off the map, on a wall, or on an exit/marker tile goes to the map's spawn.
@@ -431,7 +490,7 @@ body.portrait .round .vis{font-size:22px}
     if (Number.isInteger(x) && Number.isInteger(y) && passable(m, x, y) && t !== 'E' && t !== 'T' && !npc) return { x, y, dir: dir || 'down', clamped: false };
     return { ...m.start, clamped: true };
   }
-  const World = { safeSpawn, makeOverworld, makeTown, tileAt, passable, DIRS: { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] } };
+  const World = { makeInterior, INTERIORS, ROOMS, safeSpawn, makeOverworld, makeTown, tileAt, passable, DIRS: { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] } };
   if (typeof module !== 'undefined') module.exports = World; else root.World = World;
 })(this);
 
@@ -482,8 +541,14 @@ body.portrait .round .vis{font-size:22px}
     terracotta: ['#5c2a24', '#8d4c40', '#cd6342', '#ed7d4c', '#f4a060', '#fcd08a'],
     teal: ['#1b3438', '#23413c', '#2f5967', '#40686c', '#6a9a90', '#a8c8b0'],
     plum: ['#2e1e2a', '#46323a', '#7f4050', '#96525f', '#ac5762', '#d0848a'],
+    rose: ['#3a1a24', '#6a2a3a', '#a8445a', '#c85a6c', '#e07a80', '#f0a898'], // art-pass §3.6 / §9.9 new ramps
+    burlap: ['#4a3424', '#6e5034', '#94724a', '#b89464', '#d8b884'], plank: ['#3a2420', '#5c352e', '#7a4a32', '#94603c', '#b47c50', '#d09c68'],
+    fire: ['#5c1a10', '#a8341a', '#e0621e', '#f8a030', '#ffd27a', '#fff6dc'],
+    skinBases: ['#f0b48a', '#e8b090', '#c8865a', '#a06a48', '#8a5a3c'], hairBases: ['#2e222a', '#6a4228', '#a0602c', '#e0b048', '#e8e0c0', '#8a8aa8'],
+    tunicBases: ['#8d4c40', '#2f5967', '#96525f', '#68783c', '#a16948', '#5c4b54', '#c8a040', '#3a7ab8'],
     iron: ['#2a2a36', '#4a4a5a', '#6a6a7a', '#8a8a9a', '#b0b0bc', '#d8d8e0'],
-    ink: '#1c1020', shadow: 'rgba(30,14,24,.30)', foam: '#a8d0e8', lamp: '#ffe090', glow: '#f8c060',
+    ink: '#1c1020', shadow: 'rgba(44,20,36,.30)', ao: 'rgba(44,20,36,.45)', ao2: 'rgba(44,20,36,.25)', // art-pass §9.3: plum cast shadow .30 + contact AO .45
+    foam: '#a8d0e8', lamp: '#ffe090', glow: '#f8c060',
   };
   const outlineOf = c => G.mix(c, P.ink, .85);
   const cache = new Map();
@@ -492,8 +557,11 @@ body.portrait .round .vis{font-size:22px}
   // 1px sel-out outline around filled pixels (art spec §0).
   function addOutline(c) {
     const g = c.getContext('2d'), w = c.width, h = c.height, d = g.getImageData(0, 0, w, h), s = d.data, o = new Uint8ClampedArray(s);
+    // art-pass §5.1 / §9.7: the top-left exterior (filled pixel to the right or below, none to the left or above) is a lit outline, ink mix .60; elsewhere .85.
+    const at = (X, Y) => X >= 0 && Y >= 0 && X < w && Y < h && s[(Y * w + X) * 4 + 3] > 200 ? (Y * w + X) * 4 : -1;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4; if (s[i + 3]) continue;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= w || Y >= h) continue; const j = (Y * w + X) * 4; if (s[j + 3] > 200) { const m = G.hex(G.mix(G.toHex([s[j], s[j + 1], s[j + 2]]), P.ink, .85)); o[i] = m[0]; o[i + 1] = m[1]; o[i + 2] = m[2]; o[i + 3] = 255; break; } } }
+      const r = at(x + 1, y), b = at(x, y + 1), l = at(x - 1, y), u = at(x, y - 1), j = [r, b, l, u].find(k => k >= 0); if (j == null) continue;
+      const lit = (r >= 0 || b >= 0) && l < 0 && u < 0, m = G.hex(G.mix(G.toHex([s[j], s[j + 1], s[j + 2]]), P.ink, lit ? .60 : .85)); o[i] = m[0]; o[i + 1] = m[1]; o[i + 2] = m[2]; o[i + 3] = 255; }
     d.data.set(o); g.putImageData(d, 0, 0); return c;
   }
 
@@ -523,7 +591,7 @@ body.portrait .round .vis{font-size:22px}
       if (!isW(World.tileAt(m, x - 1, y))) g.fillRect(sx + foam, sy, 1, 16); if (!isW(World.tileAt(m, x + 1, y))) g.fillRect(sx + 15 - foam, sy, 1, 16);
       if (t === 'b') bridge(g, sx, sy); return; }
     if (t === '#') return g.drawImage(stoneWall(), sx, sy);
-    if ('.BolcrE'.includes(t) && m.id === 'town') g.drawImage(cobble(v % 12), sx, sy);
+    if ('.BolcrED'.includes(t) && m.id === 'town') { g.drawImage(cobble(v % 12), sx, sy); if (t === 'D') { R(g, sx + 3, sy, 10, 3, P.stone[4]); R(g, sx + 3, sy + 3, 10, 1, P.stone[1]); } }
     else if (t === 'p') { g.drawImage(path(v % 8), sx, sy); const r = P.path, gr = P.grass;
       for (const [dx, dy, ex, ey, ew, eh] of [[0, -1, 0, 0, 16, 1], [0, 1, 0, 15, 16, 1], [-1, 0, 0, 0, 1, 16], [1, 0, 15, 0, 1, 16]]) { const n = World.tileAt(m, x + dx, y + dy); if (n !== 'p' && n !== 'T' && n !== 'b') { R(g, sx + ex, sy + ey, ew, eh, r[2]); for (let k = 2; k < 16; k += 4) { const bx = ew === 1 ? ex + (dx < 0 ? 1 : -1) * ((k / 4 | 0) % 2) : k, by = eh === 1 ? ey + (dy < 0 ? 1 : -1) * ((k / 4 | 0) % 2) : k; R(g, sx + bx, sy + by, 1, 1, gr[4]); } } } }
     else if (t === 'f') { R(g, sx, sy, 16, 16, P.grass[1]); }
@@ -537,6 +605,34 @@ body.portrait .round .vis{font-size:22px}
   function bridge(g, sx, sy) { const r = P.timber; for (let i = 0; i < 4; i++) { R(g, sx + i * 4, sy + 2, 3, 12, r[3]); R(g, sx + i * 4, sy + 2, 3, 1, r[4]); R(g, sx + i * 4 + 3, sy + 2, 1, 12, r[1]); }
     R(g, sx, sy + 1, 16, 2, r[2]); R(g, sx, sy + 13, 16, 2, r[2]); R(g, sx + 1, sy, 2, 3, r[1]); R(g, sx + 13, sy, 2, 3, r[1]); R(g, sx + 1, sy + 13, 2, 3, r[1]); R(g, sx + 13, sy + 13, 2, 3, r[1]); }
 
+  // ---------- interiors (art-pass §7: back wall front face, side-wall slivers, plank / flagstone floors, lip with a doormat gap) ----------
+  const PLANK = P.plank, BURLAP = P.burlap;
+  const plank = v => cached('pl' + v, TS, TS, g => { const r = PLANK; for (let y = 0; y < 16; y += 4) { R(g, 0, y, 16, 4, r[3]); R(g, 0, y, 16, 1, r[4]); R(g, 0, y + 3, 16, 1, r[1]);
+      const j = (G.hash(v, y) % 12) + 2; R(g, j, y, 1, 4, r[1]); R(g, j - 1, y + 1, 1, 1, r[0]); if (G.hash(v, y, 3) % 3 === 0) R(g, 3 + G.hash(v, y, 4) % 9, y + 2, 3, 1, r[2]); } });
+  const flag = v => cached('fl' + v, TS, TS, g => { const s = P.stone; R(g, 0, 0, 16, 16, s[1]);
+      for (const [x, y, w, h] of [[0, 0, 8, 6], [9, 0, 7, 6], [0, 7, 6, 4], [7, 7, 9, 4], [0, 12, 9, 4], [10, 12, 6, 4]]) { R(g, x, y, w, h, s[2 + (G.hash(v, x, y) % 2)]); R(g, x, y, 1, 1, s[4]); } });
+  function room(g, m, x, y, sx, sy) { const t = m.t[y] && m.t[y][x];
+    if (t == null) return; const wallC = m.floor === 'stone' ? P.stone : P.plaster;
+    if (t === '#') { if (y === 0) { R(g, sx, sy - 16, 16, 32, wallC[3]); R(g, sx, sy - 16, 16, 1, wallC[4]); R(g, sx, sy + 12, 16, 4, P.timber[1]); R(g, sx, sy + 12, 16, 1, P.timber[3]); if (x % 4 === 1) R(g, sx + 7, sy - 16, 2, 28, P.timber[2]); }
+      else if (y === m.H - 1) { R(g, sx, sy, 16, 4, P.stone[4]); R(g, sx, sy + 4, 16, 2, P.stone[2]); }
+      else { R(g, x === 0 ? sx + 8 : sx, sy, 8, 16, wallC[2]); R(g, x === 0 ? sx + 15 : sx, sy, 1, 16, x === 0 ? wallC[4] : wallC[1]); } return; }
+    const v = G.hash(x, y) % 8; g.drawImage(m.floor === 'stone' ? flag(v) : plank(v), sx, sy);
+    if (y === 1) { R(g, sx, sy, 16, 3, 'rgba(30,14,24,.35)'); } // AO under the back wall
+    if (t === 'm') { const b = BURLAP; R(g, sx, sy + 4, 16, 8, b[2]); R(g, sx, sy + 4, 16, 1, b[3]); R(g, sx, sy + 11, 16, 1, b[0]); for (let i = 1; i < 16; i += 3) R(g, sx + i, sy + 6, 1, 4, b[1]); }
+  }
+  // Room furniture, drawn in the y-sorted pass. Each returns [w, h, dx, dy] canvases.
+  const furniture = (k) => cached('fu' + k, 18, 28, g => { const tm = P.timber, s = P.stone, I = P.iron;
+    if (k === 'K') { R(g, 1, 6, 16, 6, tm[4]); R(g, 1, 6, 16, 1, tm[5]); R(g, 1, 12, 16, 14, tm[2]); R(g, 1, 12, 16, 1, tm[1]); R(g, 1, 25, 16, 1, tm[0]); for (let x = 3; x < 17; x += 5) R(g, x, 14, 1, 10, tm[1]); }
+    else if (k === 'Z') { R(g, 1, 6, 16, 20, tm[1]); R(g, 2, 7, 14, 6, '#f6eed6'); R(g, 2, 13, 14, 12, '#7f4050'); R(g, 2, 13, 14, 1, '#ac5762'); R(g, 1, 25, 16, 1, tm[0]); }
+    else if (k === 'H') { R(g, 1, 0, 16, 26, tm[1]); for (const y of [2, 10, 18]) { R(g, 2, y, 14, 6, tm[0]); R(g, 3, y + 1, 3, 5, '#5ca048'); R(g, 7, y + 2, 3, 4, '#c86878'); R(g, 11, y, 4, 6, P.plaster[3]); } R(g, 1, 24, 16, 2, tm[2]); }
+    else if (k === 'A') { R(g, 3, 12, 12, 4, I[3]); R(g, 3, 12, 12, 1, I[5]); R(g, 1, 12, 3, 2, I[3]); R(g, 6, 16, 6, 4, I[2]); R(g, 4, 20, 10, 6, tm[1]); R(g, 4, 20, 10, 1, tm[3]); }
+    else if (k === 'F') { R(g, 0, 0, 18, 26, s[2]); R(g, 0, 0, 18, 1, s[4]); R(g, 3, 10, 12, 14, s[0]); } // the mouth; flames are Art.fire (animated)
+    else if (k === 'Y') { R(g, 1, 8, 16, 8, tm[3]); R(g, 1, 8, 16, 1, tm[4]); R(g, 2, 16, 2, 10, tm[1]); R(g, 14, 16, 2, 10, tm[1]); }
+  });
+  // art-pass §7.1 / §9.8: fire ramp up to #fff6dc (light sources only). Mouth [1] -> [3], 6 tongues in [3]/[4], tips [5]; 4 frames x 100 ms, tongues shift +-1 px.
+  const FIRE = P.fire;
+  const fire = f => cached('fire' + f, 12, 14, g => { const r = FIRE; R(g, 0, 6, 12, 8, r[1]); R(g, 0, 10, 12, 4, r[3]);
+    for (let k = 0; k < 6; k++) { const x = k * 2, sh = [0, 1, 0, -1][(f + k) % 4], hgt = 5 + ((k * 7 + f) % 3); R(g, x, 13 - hgt + sh, 2, hgt - sh, r[3 + (k % 2)]); R(g, x, 13 - hgt + sh, 1, 1, r[5]); } });
   // ---------- props (3/4, drawn in the y-sorted pass) ----------
   const tree = f => cached('tree' + f, 18, 22, (g, c) => { const r = P.grass, t = P.timber; R(g, 7, 14, 4, 6, t[2]); R(g, 7, 14, 1, 6, t[3]);
     const blob = (cx, cy, rad, col) => { for (let y = -rad; y <= rad; y++) for (let x = -rad; x <= rad; x++) if (x * x + y * y <= rad * rad + 1) R(g, cx + x, cy + y, 1, 1, col); };
@@ -548,31 +644,47 @@ body.portrait .round .vis{font-size:22px}
   const townMarker = () => cached('tm', 18, 22, (g, c) => { const t = P.terracotta, pl = P.plaster;
     const house = (x, y) => { R(g, x, y + 6, 7, 5, pl[3]); R(g, x, y + 6, 7, 1, pl[4]); R(g, x + 3, y + 8, 2, 3, P.timber[1]); for (let i = 0; i < 6; i++) R(g, x + 3 - (i >> 1), y + i, 1 + (i >> 1) * 2, 1, i < 2 ? t[5] : t[3]); R(g, x - 1, y + 5, 9, 1, t[1]); };
     house(2, 6); house(9, 9); R(g, 9, 5, 3, 3, P.lamp); addOutline(c); });
-  function building(g, b, sx, sy) { // sx,sy = top-left of footprint in screen px; front = roof 24 + wall 24 = 48
-    const w = b.w * TS, wallY = sy + b.h * TS - 24, roof = P[b.roof], pl = P.plaster, tm = P.timber;
+  // art-pass §9.1: 5x4 blocks = roof 32 + wall 32 (80 x 64 front); older 4x3 blocks keep roof 24 + wall 24.
+  const DOOR = { w: 10, h: 16 }, WIN = 8; // art-pass §9.2 / §3.7
+  function building(g, b, sx, sy) { // sx,sy = top-left of footprint in screen px
+    const w = b.w * TS, WALL = b.h >= 4 ? 32 : 24, RH = b.h * TS - WALL, wallY = sy + RH, roof = P[b.roof], pl = P.plaster, tm = P.timber;
     g.fillStyle = P.shadow; g.beginPath(); g.moveTo(sx + w, sy + 6); g.lineTo(sx + w + 6, sy + 10); g.lineTo(sx + w + 6, sy + b.h * TS + 4); g.lineTo(sx + 6, sy + b.h * TS + 4); g.lineTo(sx, sy + b.h * TS); g.fill();
-    R(g, sx, wallY, w, 24, pl[3]); R(g, sx, wallY, w, 1, pl[4]); R(g, sx, wallY + 22, w, 2, P.stone[2]);
-    R(g, sx, wallY, 2, 22, tm[2]); R(g, sx + w - 2, wallY, 2, 22, tm[2]); R(g, sx, wallY + 12, w, 2, tm[2]);
-    const ry = sy + b.h * TS - 48; // roof block 20 slope + 4 ridge
-    R(g, sx - 2, ry, w + 4, 24, roof[3]); R(g, sx - 2, ry, w + 4, 2, roof[5]); R(g, sx - 2, ry + 2, w + 4, 1, roof[4]);
-    for (let y = ry + 4; y < ry + 23; y += 3) { R(g, sx - 2, y, w + 4, 1, roof[1]); for (let x = sx + ((y / 3 | 0) % 2) * 2; x < sx + w; x += 4) R(g, x, y + 1, 1, 1, roof[4]); }
-    R(g, sx - 2, ry + 23, w + 4, 1, roof[0]); R(g, sx, ry + 24, w, 2, '#2c1424');
+    R(g, sx, sy + b.h * TS, w, 2, P.ao); R(g, sx, sy + b.h * TS + 2, w, 1, P.ao2); // building base AO: 2 px .45 + 1 px .25
+    R(g, sx, wallY, w, WALL, pl[3]); R(g, sx, wallY, w, 1, pl[4]); R(g, sx, wallY + WALL - 2, w, 2, P.stone[2]);
+    R(g, sx, wallY, 2, WALL - 2, tm[2]); R(g, sx + w - 2, wallY, 2, WALL - 2, tm[2]); R(g, sx, wallY + (WALL >> 1), w, 2, tm[2]);
+    for (let x = sx + 16; x < sx + w - 8; x += 16) { R(g, x, wallY, 2, WALL - 2, tm[1]); R(g, x, wallY, 1, WALL - 2, tm[3]); } // posts every 16 px (§3.7)
+    const ry = sy; // roof block: slope RH - 4 + ridge
+    R(g, sx - 2, ry, w + 4, RH, roof[3]); R(g, sx - 2, ry, w + 4, 2, roof[5]); R(g, sx - 2, ry + 2, w + 4, 1, roof[4]);
+    for (let y = ry + 4; y < ry + RH - 1; y += 3) { R(g, sx - 2, y, w + 4, 1, roof[1]); for (let x = sx + ((y / 3 | 0) % 2) * 2; x < sx + w; x += 4) R(g, x, y + 1, 1, 1, roof[4]); }
+    R(g, sx - 2, ry + RH - 1, w + 4, 1, roof[0]); R(g, sx, ry + RH, w, 2, '#2c1424');
     R(g, sx + w - 14, ry - 6, 6, 10, P.stone[3]); R(g, sx + w - 14, ry - 6, 6, 1, P.stone[5]); R(g, sx + w - 9, ry - 6, 1, 10, P.stone[1]);
-    const dx = sx + (w >> 1) - 4, dy = wallY + 12; R(g, dx - 1, dy - 1, 10, 13, tm[0]); R(g, dx, dy, 8, 12, tm[1]); R(g, dx, dy, 8, 1, tm[3]); R(g, dx + 6, dy + 6, 1, 1, P.lamp);
-    if (b.sign) { R(g, dx - 1, dy - 1, 2, 2, P.plaster[3]); R(g, dx + 7, dy - 1, 2, 2, P.plaster[3]); }
-    for (const wx of [sx + 6, sx + w - 12]) { R(g, wx - 1, wallY + 4, 8, 8, tm[1]); R(g, wx, wallY + 5, 6, 6, P.glow); R(g, wx + 1, wallY + 6, 4, 4, P.lamp); R(g, wx + 3, wallY + 5, 1, 6, tm[1]); R(g, wx, wallY + 8, 6, 1, tm[1]); }
-    if (b.sign) { const gx = dx + 14 > sx + w - 14 ? dx - 16 : dx + 12, gy = wallY + 1; R(g, gx + 2, gy, 1, 2, tm[1]); R(g, gx + 9, gy, 1, 2, tm[1]); R(g, gx, gy + 2, 12, 8, tm[3]); R(g, gx, gy + 2, 12, 1, tm[4]); R(g, gx, gy + 9, 12, 1, tm[1]);
+    const DW = DOOR.w, DH = DOOR.h, dx = b.door ? sx + (b.door.x - b.x) * TS + ((TS - DW) >> 1) : sx + (w >> 1) - (DW >> 1), dy = wallY + WALL - 2 - DH;
+    doorArt(g, dx, dy, DW, DH);
+    if (b.sign) { R(g, dx - 1, dy - 1, 2, 2, P.plaster[3]); R(g, dx + DW - 1, dy - 1, 2, 2, P.plaster[3]); }
+    for (const wx of [sx + 5, sx + w - 5 - WIN - 2]) windowArt(g, wx, wallY + 4);
+    if (b.sign) { const gx = dx + DW + 6 > sx + w - 14 ? dx - 16 : dx + DW + 4, gy = wallY + 1; R(g, gx + 2, gy, 1, 2, tm[1]); R(g, gx + 9, gy, 1, 2, tm[1]); R(g, gx, gy + 2, 12, 8, tm[3]); R(g, gx, gy + 2, 12, 1, tm[4]); R(g, gx, gy + 9, 12, 1, tm[1]);
       const ink = P.ink; if (b.sign === 'inn') { R(g, gx + 3, gy + 4, 6, 1, ink); R(g, gx + 3, gy + 5, 1, 3, ink); R(g, gx + 8, gy + 5, 1, 3, ink); R(g, gx + 3, gy + 6, 6, 1, ink); }
       else if (b.sign === 'bag') { R(g, gx + 4, gy + 4, 4, 1, ink); R(g, gx + 3, gy + 5, 6, 3, ink); R(g, gx + 5, gy + 6, 2, 1, P.lamp); }
       else { R(g, gx + 2, gy + 4, 8, 2, ink); R(g, gx + 5, gy + 6, 2, 1, ink); R(g, gx + 3, gy + 7, 6, 1, ink); } }
   }
+  function doorArt(g, dx, dy, DW, DH) { const tm = P.timber; // arched top (2 px corners cut, 1 px steps), planks with 1 px gaps every 3 px, hinge, knob, stone step
+    R(g, dx - 1, dy + 1, DW + 2, DH - 1, tm[0]); R(g, dx + 1, dy - 1, DW - 2, 2, tm[0]); R(g, dx, dy, DW, 1, tm[0]);
+    R(g, dx, dy + 2, DW, DH - 2, tm[2]); R(g, dx + 1, dy + 1, DW - 2, 1, tm[2]); R(g, dx + 2, dy, DW - 4, 1, tm[2]);
+    for (let x = dx + 3; x < dx + DW; x += 3) R(g, x, dy + 1, 1, DH - 1, tm[1]);
+    R(g, dx, dy + 4, 2, 1, '#4a4a5a'); R(g, dx, dy + DH - 5, 2, 1, '#4a4a5a'); R(g, dx + DW - 3, dy + (DH >> 1), 1, 1, '#ffe090');
+    R(g, dx - 1, dy + DH, DW + 2, 2, P.stone[4]); }
+  function windowArt(g, wx, wy) { const tm = P.timber; // 8x8: frame, glass #f8c060 with a 4x4 #ffe090 core, mullion cross, sill 10x2
+    R(g, wx - 1, wy - 1, WIN + 2, WIN + 2, tm[1]); R(g, wx, wy, WIN, WIN, '#f8c060'); R(g, wx + 2, wy + 2, 4, 4, '#ffe090'); R(g, wx + (WIN >> 1), wy, 1, WIN, tm[1]); R(g, wx, wy + (WIN >> 1), WIN, 1, tm[1]);
+    R(g, wx - 1, wy + WIN + 1, WIN + 2, 1, tm[3]); R(g, wx - 1, wy + WIN + 2, WIN + 2, 1, tm[1]); }
   const well = () => cached('well', 22, 22, (g, c) => { const s = P.stone; R(g, 1, 4, 20, 10, s[4]); R(g, 4, 6, 14, 6, P.water[2]); R(g, 6, 7, 2, 1, P.water[5]); R(g, 1, 4, 20, 1, s[5]); R(g, 1, 13, 20, 8, s[2]); R(g, 1, 17, 20, 1, s[1]); R(g, 1, 20, 20, 1, s[0]);
     R(g, 2, 0, 2, 6, P.timber[2]); R(g, 18, 0, 2, 6, P.timber[2]); R(g, 1, 0, 20, 2, P.timber[3]); addOutline(c); });
   const lamp = f => cached('lamp' + f, 8, 30, (g, c) => { const ir = P.iron; R(g, 3, 6, 2, 22, ir[2]); R(g, 3, 6, 1, 22, ir[4]); R(g, 1, 0, 6, 6, ir[1]); R(g, 2, 1, 4, 4, P.lamp); R(g, 3, 2, 2, 2, '#fff4c8'); R(g, 2, 27, 4, 2, ir[1]); addOutline(c); });
   const crate = () => cached('crate', 14, 14, (g, c) => { const t = P.timber; R(g, 1, 1, 12, 8, t[4]); R(g, 1, 9, 12, 4, t[2]); R(g, 1, 4, 12, 1, t[3]); R(g, 6, 1, 1, 8, t[3]); R(g, 1, 12, 12, 1, t[1]); addOutline(c); });
   const barrel = () => cached('barrel', 12, 16, (g, c) => { const t = P.timber; R(g, 1, 1, 10, 14, t[3]); R(g, 1, 1, 10, 3, t[4]); R(g, 8, 4, 3, 11, t[2]); R(g, 1, 6, 10, 1, P.iron[1]); R(g, 1, 11, 10, 1, P.iron[1]); R(g, 3, 2, 6, 1, t[1]); addOutline(c); });
   const signpost = () => cached('sign', 12, 18, (g, c) => { const t = P.timber; R(g, 5, 7, 2, 10, t[2]); R(g, 5, 7, 1, 10, t[3]); R(g, 1, 1, 10, 7, t[3]); R(g, 1, 1, 10, 1, t[4]); R(g, 1, 7, 10, 1, t[1]); R(g, 3, 3, 6, 1, t[1]); R(g, 3, 5, 4, 1, t[1]); addOutline(c); });
-  const shadow = (g, cx, cy, w, h) => { g.fillStyle = P.shadow; g.beginPath(); g.ellipse(cx, cy, w / 2, h / 2, 0, 0, 7); g.fill(); };
+  // §4.2/4.3: a cast ellipse thrown down-right (+3, +1) at .30, then the contact AO (base width + 2, 3 px tall, 1 px under the base) at .45.
+  const shadow = (g, cx, cy, w, h) => { if (Art.flat) return; g.fillStyle = P.shadow; g.beginPath(); g.ellipse(cx + 3, cy + 1, w / 2, h / 2, 0, 0, 7); g.fill();
+    g.fillStyle = P.ao; g.beginPath(); g.ellipse(cx, cy + 1, (w + 2) / 2, 1.5, 0, 0, 7); g.fill(); };
 
   // ---------- actors: 16x24 grids from art spec §4 ----------
   const JOE = ['.....OOOOOO.....', '....OHHHhhhO....', '...OHHhhhhhhO...', '...OHhhhhhhhO...', '...OhhsSSssshO..', '...OhsSSSsssdO..', '...OsweSsswesO..', '...OsSSSsssssO..', '....OsssddssO...', '.....OOssdOO....', '....OTTttttkO...', '...OTTTtttttkO..', '..OsOTttttttkOsO', '..OsOttttttkkOdO', '...OOtttttttkOO.', '....ObbbbbbbbO..', '....OpppppppqO..', '....OppppOpqqO..', '....OpppO.OpqO..', '....OppqO.OpqO..', '....OppqO.OqqO..', '...OffffO.OfffO.', '...OfffffOOffffO', '....OOOOO..OOOO.'];
@@ -580,7 +692,7 @@ body.portrait .round .vis{font-size:22px}
   const LOOKS = {
     human: { skin: '#f0b48a', hair: '#6a4228' }, elf: { skin: '#f4d0a8', hair: '#e8e0c0', ears: 1 }, capfolk: { skin: '#e8b090', hair: '#6a4228', cap: '#b0384a' },
     inn: { skin: '#c8865a', hair: '#2e222a', tunic: '#8d4c40' }, shop: { skin: '#f0b48a', hair: '#e0b048', tunic: '#2f5967' },
-    villager: { skin: '#e8b090', hair: '#6a4228', cap: '#c8a040', tunic: '#96525f' }, smith: { skin: '#8a5a3c', hair: '#2e222a', tunic: '#5c4b54' },
+    villager: { skin: '#e8b090', hair: '#6a4228', cap: '#c8a040', tunic: '#96525f' }, miller: { skin: '#a06a48', hair: '#a0602c', tunic: '#68783c' }, weaver: { skin: '#f0b48a', hair: '#8a8aa8', tunic: '#3a7ab8' }, smith: { skin: '#8a5a3c', hair: '#2e222a', tunic: '#5c4b54' },
   };
   function actorGrid(body, dir, frame) {
     let g = (body === 'jill' ? JILL : JOE).map(r => r.split(''));
@@ -604,7 +716,7 @@ body.portrait .round .vis{font-size:22px}
       addOutline(c);
     });
   }
-  root.Art = { P, TS, ground, grass, tree, hill, mountain, townMarker, building, well, lamp, signpost, crate, barrel, shadow, actor, addOutline, cached };
+  const Art = root.Art = { LOOKS, FIRE, fire, BUDGET: { town: [48, 64], interior: [40, 56] }, /* art-pass §8 / §9.4 */ DOOR, WIN: () => WIN, room, furniture, PLANK, P, TS, ground, grass, tree, hill, mountain, townMarker, building, well, lamp, signpost, crate, barrel, shadow, actor, addOutline, cached };
 })(this);
 
 </script><script>
@@ -657,7 +769,7 @@ body.portrait .round .vis{font-size:22px}
     pad: 8, lineH: 12, lines: 4, typeMs: 30,
     fill: ['#2c3478', '#1e2458', '#12163a'], fillStops: [0, 0.38, 1],
     frame: '#f6eed6', outer: '#120a18', inner: '#7484e0',
-    text: '#f0ecdc', head: '#ffd878', dim: '#8a8aa8', locked: '#8a86a8', /* gated shop item: name + price dimmed (art) */ sel: '#f4cc5c', selText: '#1c1020', arrowMs: 400,
+    text: '#f0ecdc', head: '#ffd878', dim: '#8a8aa8', sel: '#f4cc5c', selText: '#1c1020', arrowMs: 400,
     menuRowH: 28,
   };
   // Window style (art spec §6): navy gradient, 2px cream frame, 1px dark outside, 1px periwinkle inner ring, cut corners.
@@ -688,7 +800,9 @@ body.portrait .round .vis{font-size:22px}
   Menu.prototype.cell = function (i) { const cw = (this.w - 12) / this.cols; return [this.x + 6 + (i % this.cols) * cw, this.rowY(i), cw, TB.menuRowH]; };
   Menu.prototype.button = function (b) { const n = this.items.length, c = this.cols;
     if (c > 1 && (b === 'left' || b === 'right')) { const r = this.sel - this.sel % c, k = Math.min(c, n - r); this.sel = r + (this.sel % c + (b === 'left' ? k - 1 : 1)) % k; }
-    else if (b === 'up') this.sel = c > 1 ? (this.sel - c + this.rows * c) % (this.rows * c) : (this.sel + n - 1) % n; else if (b === 'down') this.sel = c > 1 ? (this.sel + c) % (this.rows * c) : (this.sel + 1) % n;
+    else if ((b === 'up' || b === 'down') && c > 1) { // up/down cycle through the filled cells of the current column (an empty cell is skipped, never a jump sideways)
+      const colI = []; for (let i = this.sel % c; i < n; i += c) colI.push(i); this.sel = colI[(colI.indexOf(this.sel) + (b === 'down' ? 1 : colI.length - 1)) % colI.length]; }
+    else if (b === 'up') this.sel = (this.sel + n - 1) % n; else if (b === 'down') this.sel = (this.sel + 1) % n;
     else if (b === 'A') this.items[this.sel].act(); else if (b === 'B' && this.onCancel) this.onCancel();
     if (this.sel >= n) this.sel = n - 1; };
   Menu.prototype.tap = function (px, py) { for (let i = 0; i < this.items.length; i++) { const [cx, cy, cw, ch] = this.cols > 1 ? this.cell(i) : [this.x, this.rowY(i), this.w, TB.menuRowH]; if (px >= cx && px < cx + cw && py >= cy && py < cy + ch) { this.sel = i; this.items[i].act(); return true; } } return false; };
@@ -699,8 +813,8 @@ body.portrait .round .vis{font-size:22px}
     this.items.forEach((it, i) => {
       const ry = this.rowY(i), on = i === this.sel, col = on ? TB.selText : it.disabled ? TB.dim : TB.text, sh = on ? null : '#1c1020', rt = it.right && (typeof it.right === 'function' ? it.right() : it.right);
       if (this.cols > 1) { const [cx, cy, cw, ch] = this.cell(i);
-        if (on) { ctx.fillStyle = TB.sel; const l = i % this.cols === 0 ? 0 : 1; ctx.fillRect(cx + l, cy + 1, cw - 1 - l, ch - 2); } // left column: bar at x+6, a 2px gap to the frame's inner ring (x+3)
-        const lk = typeof it.locked === 'function' ? it.locked() : it.locked, ink = on ? TB.selText : lk ? TB.locked : null;
+        if (on) { ctx.fillStyle = TB.sel; const l = i % this.cols === 0 ? 0 : 1; ctx.fillRect(cx + l, cy + 1, cw - 1, ch - 2); } // outer columns: a 2px gap to the frame's inner ring (left bar from x+6, right bar to x+w-7)
+        const lk = typeof it.locked === 'function' ? it.locked() : it.locked, ink = on ? TB.selText : lk ? TB.dim /* gated shop item: name + price dimmed */ : null;
         G.text(ctx, it.label, cx + 6, cy + 3, ink || col, 'left', sh); let rx = cx + cw - 6;
         if (lk && it.tag) { const tw = G.textWidth(it.tag) + 4; ctx.fillStyle = ink; ctx.fillRect(rx - tw, cy + 13, tw, 1); ctx.fillRect(rx - tw, cy + 25, tw, 1); ctx.fillRect(rx - tw, cy + 13, 1, 13); ctx.fillRect(rx - 1, cy + 13, 1, 13);
           G.text(ctx, it.tag, rx - tw + 2, cy + 14, ink, 'left', null); rx -= tw + 4; } // small outlined 'STR 8' tag after the price
@@ -711,6 +825,294 @@ body.portrait .round .vis{font-size:22px}
     });
   };
   root.TextBox = { TB, frame, Dialog, Menu };
+})(this);
+
+</script><script>
+// menu.js — the 8-tab full-screen menu (design/specs/ui-fullscreen-interiors-draft.md §2; look: art-pass-v1 §6).
+// Immediate mode: each frame a page draws itself and registers its tappable boxes in this.els; taps and the d-pad use that list.
+(function (root) {
+  const { Rules, Gfx: G, TextBox: TBX, Art, Text } = root, TB = TBX.TB, T = Text.T;
+  const W = 384, H = 216, TAB_W = 48, TAB_H = 32, ROW = 32, BODY_Y = 32, FOOT_Y = 196;
+  const TABS = [['status', 'Status'], ['equip', 'Equip'], ['items', 'Items'], ['skills', 'Skills'], ['craft', 'Crafts'], ['props', 'Lands'], ['journal', 'Journal'], ['options', 'Options']];
+  const TITLES = { status: 'Status', equip: 'Equipment', items: 'Items', skills: 'Skills', craft: 'Crafting skills', props: 'Properties owned', journal: 'Journal', options: 'Options' };
+  const C = { gold: '#ffd878', green: '#5cc85c', red: '#d03030', ink: '#1c1020', panel: '#12163a', ring: '#7484e0' };
+  const ITEM_LINE = { club: 'm1.item.stick', woodenSword: 'm1.item.woodsword', copperSword: 'm1.item.sword', leatherVest: 'm1.item.vest', herb: 'm1.item.herb', fluff: 'm1.item.fluff', gland: 'm1.item.gland' };
+  const CAT_NAME = { use: 'Use', gear: 'Gear', material: 'Material', fish: 'Fish' };
+  const TRADES = [['smithing', 'Smithing', 'Not open yet'], ['mining', 'Mining', 'Not yet: no vein in Kettleby.'], ['fishing', 'Fishing', 'Not in M1'], ['enchanting', 'Enchanting', 'Not yet: no enchanter in Kettleby.']];
+  const tradeNext = l => Math.round(12 * Math.pow(l, 1.62)); // TM curve: 12, 37, 71, 113 ...
+  const SLOTS = [['weapon', 'Weapon'], ['armor', 'Body'], ['head', 'Head'], ['acc', 'Accessory']];
+  const pct = v => Math.round(v * 1000) / 10 + '%';
+  const gsc = c => { const m = Rules.toGSC(c); return m.g + 'g ' + m.s + 's ' + m.c + 'c'; };
+  const playTime = ms => { const m = Math.floor(ms / 60000); return Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); };
+  const SLIDE_MS = 160, LOCK_MS = 40;
+
+  // cfg (station pages, §3.3): { station, tabs: [[key, label]], pages, titles, tabW }. Station cursors live for the visit only.
+  function FullMenu(game, api, cfg) {
+    this.full = true; this.g = game; this.api = api; this.cfg = cfg || null; this.sub = []; this.els = []; this.msg = null; this.t = 0; this.closing = false;
+    this.tabs = cfg ? cfg.tabs : TABS; this.keys = this.tabs.map(t => t[0]); this.pages = cfg ? cfg.pages : PAGES; this.titles = cfg ? cfg.titles : TITLES; this.tabW = cfg ? cfg.tabW || W / this.tabs.length : TAB_W;
+    if (cfg) { this.tab = this.keys[0]; this.cur = {}; return; }
+    const ms = game.s.menu || (game.s.menu = { tab: 'status', cur: {} });
+    this.tab = Rules.MENU_TABS.includes(ms.tab) ? ms.tab : 'status'; this.cur = ms.cur || (ms.cur = {});
+  }
+  const P = FullMenu.prototype;
+  P.state = function (tab = this.tab) { return this.cur[tab] || (this.cur[tab] = { i: 0, scroll: 0 }); };
+  P.persist = function () { if (!this.cfg) this.g.s.menu = { tab: this.tab, cur: this.cur }; };
+  P.locked = function () { return this.closing || this.t < LOCK_MS; };
+  P.update = function (dt) { this.t += dt; if (this.msg && (this.msg.t -= dt) <= 0) this.msg = null; if (this.closing && this.t >= SLIDE_MS) this.api.closed(this); };
+  P.close = function () { if (this.closing) return; this.persist(); this.api.save(); this.closing = true; this.t = 0; };
+  P.say = function (s) { this.msg = { s, t: 2500 }; };
+  P.setTab = function (k) { this.tab = k; this.sub = []; this.persist(); };
+  P.stepTab = function (d) { const n = this.keys.length, i = this.keys.indexOf(this.tab); this.setTab(this.keys[(i + d + n) % n]); };
+  P.focusables = function () { return this.els.filter(e => e.act || e.focus); };
+
+  // ---- input ----
+  P.button = function (b) {
+    if (this.locked()) return;
+    if (b === 'Q') return this.stepTab(-1); if (b === 'E') return this.stepTab(1);
+    if (b === 'M') return this.close();
+    const st = this.state(), sub = this.sub[this.sub.length - 1];
+    if (b === 'B') { if (sub) { this.sub.pop(); return; } return this.close(); }
+    if (!sub && st.i === -1) { // cursor on the tab strip
+      if (b === 'left') return this.stepTab(-1); if (b === 'right') return this.stepTab(1);
+      if (b === 'down' || b === 'A') { st.i = 0; this.clampCursor(); } return; }
+    const page = this.pageNav();
+    if (page && page.call(this, b)) return;
+    const f = this.focusables(); if (!f.length) { if (b === 'up' && !sub) st.i = -1; return; }
+    const ix = sub ? (sub.i = Math.min(sub.i || 0, f.length - 1)) : Math.min(st.i, f.length - 1), cur = f[ix];
+    if (b === 'A') { if (cur.act && !cur.dim) cur.act(); else if (cur.dim && cur.why) this.say(cur.why); return; }
+    const d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[b]; if (!d) return;
+    const cx = cur.x + cur.w / 2, cy = cur.y + cur.h / 2; let best = -1, bs = 1e9;
+    f.forEach((e, i) => { if (i === ix) return; const ex = e.x + e.w / 2 - cx, ey = e.y + e.h / 2 - cy, along = ex * d[0] + ey * d[1], side = Math.abs(ex * d[1] + ey * d[0]);
+      if (along <= 4) return; const sc = along + side * 2; if (sc < bs) { bs = sc; best = i; } });
+    if (best >= 0) { if (sub) sub.i = best; else st.i = best; } else if (b === 'up' && !sub) st.i = -1; // off the top: onto the tab strip
+  };
+  P.clampCursor = function () { const st = this.state(); if (st.i >= 0) { const n = this.focusables().length; if (n && st.i >= n) st.i = n - 1; } };
+  P.tap = function (x, y) {
+    if (this.locked()) return true;
+    if (y < TAB_H) { const k = this.keys[Math.floor(x / this.tabW)]; if (!k) return true; if (k === this.tab && !this.sub.length) this.close(); else this.setTab(k); return true; }
+    const f = this.focusables(), sub = this.sub[this.sub.length - 1];
+    for (let i = 0; i < f.length; i++) { const e = f[i]; if (x >= e.x && x < e.x + e.w && y >= e.y && y < e.y + e.h) {
+      if (sub) sub.i = i; else this.state().i = i;
+      if (e.twoTap && !e.on) return true; // 1st tap selects, 2nd confirms
+      if (e.dim) { if (e.why) this.say(e.why); return true; } if (e.act) e.act(); return true; } }
+    return true;
+  };
+  P.swipe = function (dx) { if (Math.abs(dx) >= 24) this.stepTab(dx < 0 ? 1 : -1); };
+  P.pageNav = function () { const sub = this.sub[this.sub.length - 1]; if (sub && sub.nav) return sub.nav; if (this.cfg) return null; return this.tab === 'options' && !sub ? optionsNav : this.tab === 'journal' && !sub && this.journalSub() === 'log' ? logNav : null; };
+
+  // ---- drawing ----
+  P.el = function (e) { this.els.push(e); return e; };
+  P.isFocus = function (e) { const sub = this.sub[this.sub.length - 1], f = this.focusables(), i = sub ? sub.i || 0 : this.state().i; return f[i] === e; };
+  P.draw = function (ctx, now) {
+    const slide = this.closing ? Math.min(1, this.t / SLIDE_MS) : 1 - Math.min(1, this.t / SLIDE_MS), oy = -Math.round(Math.ceil(slide * 4) / 4 * H); // 4 frames x 40 ms
+    ctx.save(); ctx.translate(0, oy);
+    ctx.fillStyle = '#07060f'; ctx.fillRect(0, 0, W, H); // spec A §2.1: the whole canvas, no world visible
+    const prev = this.els; this.els = []; this._prevF = prev.filter(e => e.act || e.focus);
+    this.drawTabs(ctx, now);
+    TBX.frame(ctx, 0, BODY_Y, W, FOOT_Y - BODY_Y); TBX.frame(ctx, 0, FOOT_Y, W, H - FOOT_Y);
+    const sub = this.sub[this.sub.length - 1];
+    if (sub) sub.draw.call(this, ctx, sub, now); else this.pages[this.tab].call(this, ctx, now);
+    this.drawFooter(ctx);
+    this.clampCursor(); this.drawFocus(ctx, now);
+    ctx.restore();
+  };
+  P.drawTabs = function (ctx, now) {
+    const TW = this.tabW; this.tabs.forEach(([k, label], i) => { const x = i * TW, TAB_W = TW, on = k === this.tab, focus = this.state().i === -1 && on && !this.sub.length;
+      if (on) { const g = ctx.createLinearGradient(0, 0, 0, TAB_H); g.addColorStop(0, '#f4cc5c'); g.addColorStop(1, '#b07820'); ctx.fillStyle = '#f6eed6'; ctx.fillRect(x, 0, TAB_W, TAB_H); ctx.fillStyle = g; ctx.fillRect(x + 2, 2, TAB_W - 4, TAB_H - 2); }
+      else { ctx.fillStyle = C.ring; ctx.fillRect(x, 0, TAB_W, TAB_H); ctx.fillStyle = C.panel; ctx.fillRect(x + 1, 1, TAB_W - 2, TAB_H - 2); }
+      if (focus && (now / 400 | 0) % 2 === 0) { ctx.fillStyle = C.gold; ctx.fillRect(x, 0, TAB_W, 1); ctx.fillRect(x, TAB_H - 1, TAB_W, 1); ctx.fillRect(x, 0, 1, TAB_H); ctx.fillRect(x + TAB_W - 1, 0, 1, TAB_H); }
+      if (!this.cfg) drawTabIcon(ctx, k, x + 24, 4, on);
+      G.text(ctx, label, x + TW / 2, this.cfg ? 11 : 19, on ? C.ink : TB.text, 'center', on ? null : C.ink); });
+  };
+  P.drawFooter = function (ctx) {
+    const c = this.g.s.char, sub = this.sub[this.sub.length - 1];
+    const left = this.msg ? this.msg.s : sub && sub.title ? sub.title : this.titles[this.tab];
+    G.text(ctx, left, 10, FOOT_Y + 6, this.msg ? TB.text : C.gold);
+    const right = (this.tab === 'items' || this.cfg) && !sub ? '' : 'A Select  B Back'; if (right && !this.msg) G.text(ctx, right, W - 10, FOOT_Y + 6, TB.dim, 'right');
+  };
+  P.drawFocus = function (ctx, now) {
+    const f = this.focusables(), sub = this.sub[this.sub.length - 1], i = sub ? sub.i || 0 : this.state().i, e = f[i]; if (!e || e.noRing) return;
+    ctx.fillStyle = C.gold; ctx.fillRect(e.x, e.y, e.w, 2); ctx.fillRect(e.x, e.y + e.h - 2, e.w, 2); ctx.fillRect(e.x, e.y, 2, e.h); ctx.fillRect(e.x + e.w - 2, e.y, 2, e.h);
+  };
+  // A selectable row: gold bar when focused (2 px inset rule), dim text when greyed.
+  P.row = function (ctx, e) { this.el(e); const on = this.isFocusNext(e);
+    if (on) { const g = ctx.createLinearGradient(0, e.y, 0, e.y + e.h); g.addColorStop(0, '#f4cc5c'); g.addColorStop(1, '#b07820'); ctx.fillStyle = g; ctx.fillRect(e.x + 2, e.y + 2, e.w - 4, e.h - 4); e.noRing = true; e.on = true; }
+    const ink = on ? C.ink : e.dim ? TB.dim : TB.text, sh = on ? null : C.ink, ty = e.y + (e.h - 11 >> 1);
+    G.text(ctx, e.label, e.x + 8, ty, ink, 'left', sh); if (e.right != null) G.text(ctx, e.right, e.x + e.w - 8, ty, on ? C.ink : e.rc || C.gold, 'right', sh); return e; };
+  // Focus is known only after the page registered its boxes; rows ask by position in the focusable list.
+  P.isFocusNext = function (e) { const sub = this.sub[this.sub.length - 1], i = sub ? sub.i || 0 : this.state().i, n = this.els.filter(x => x.act || x.focus).indexOf(e); return n === i; };
+  P.btn = function (ctx, x, y, w, h, label, act, o = {}) { return this.row(ctx, Object.assign({ x, y, w, h, label, act }, o)); };
+  P.txt = (ctx, s, x, y, c = TB.text, a = 'left') => G.text(ctx, s, x, y, c, a);
+  P.confirm = function (text, yes) { this.sub.push({ i: 1, title: 'Confirm', draw(ctx, sub) {
+    this.txt(ctx, text, W / 2, 80, TB.text, 'center');
+    this.btn(ctx, 112, 112, 72, ROW, 'Yes', () => { this.sub.pop(); yes(); }); this.btn(ctx, 200, 112, 72, ROW, 'No', () => this.sub.pop()); } }); };
+
+  // ---- pages ----
+  const PAGES = {
+    status(ctx) { const c = this.g.s.char, d = Rules.derive(c), e = Rules.ENEMIES.bumblet, X = 10;
+      let y = 38; const line = (s, col) => { this.txt(ctx, s, X, y, col); y += 13; };
+      line(c.name, C.gold); line(Rules.RACES[c.race].name + ' - ' + (c.body === 'jill' ? 'Jill' : 'Joe'));
+      line('Lv ' + c.lvl); line('XP ' + (c.lvl >= 2 ? 'MAX' : c.xp + ' / ' + Rules.LV2_XP)); line('HP ' + c.hp + '/' + c.maxHp);
+      line('MP ' + d.mp + '/' + d.mp, TB.dim); line('(unused in M1)', TB.dim);
+      ctx.drawImage(Art.actor(c.race, c.body, 'down', 0), 34, 132, 36, 52);
+      const pts = c.points || 0, SX = 120; this.txt(ctx, 'Unspent points: ' + pts, SX, 38, pts ? C.gold : TB.dim);
+      Rules.STATS.forEach((s, i) => { const ry = 50 + i * 28; this.txt(ctx, s.toUpperCase(), SX, ry + 9); this.txt(ctx, String(c[s]), SX + 58, ry + 9, C.gold, 'right'); this.txt(ctx, '+0', SX + 64, ry + 9, C.green);
+        if (pts > 0) this.btn(ctx, SX + 90, ry - 2, 32, 32, '+', () => this.confirm('Spend 1 point on ' + s.toUpperCase() + '?', () => { Rules.spendPoint(c, s); this.api.save(); this.say(s.toUpperCase() + ' is now ' + c[s] + '.'); }), { id: 'plus-' + s }); });
+      const RX = 262, RV = 374; let ry = 38; const kv = (k, v, col) => { this.txt(ctx, k, RX, ry); this.txt(ctx, v, RV, ry, col || C.gold, 'right'); ry += 13; };
+      kv('ATK', d.atk); kv('DEF', d.def); kv('Hit %', pct(Rules.hitChance(d.dex, e.dex))); kv('Dodge %', pct(Rules.dodgeChance(e.dex, d.dex))); kv('Crit %', pct(Rules.Combat.critChance(d)));
+      ry += 6; kv('Purse', gsc(c.coin)); kv('Deaths', c.deaths || 0); kv('Play time', playTime(c.playMs || 0)); },
+
+    equip(ctx) { const c = this.g.s.char;
+      ctx.fillStyle = '#3a4078'; ctx.fillRect(56, 126, 68, 6); ctx.drawImage(Art.actor(c.race, c.body, 'down', 0), 63, 52, 54, 78); // paper doll: sprite x3 (menu-draft option (c) stand-in)
+      this.txt(ctx, 'Head and accessory: empty in M1', 90, 176, TB.dim, 'center');
+      SLOTS.forEach(([slot, label], i) => { const y = 38 + i * 38, id = c[slot], it = id && Rules.ITEMS[id], x = 186, w = 192;
+        const e = this.row(ctx, { id: 'slot-' + slot, x, y, w, h: ROW, label: label + ': ' + (it ? it.name : '-'), act: () => slot === 'head' || slot === 'acc' ? this.say('Nothing to wear here yet.') : this.sub.push(equipList(slot)) });
+        if (it) { const pips = c.dur[slot], tag = pips === 0 ? 'Broken' : pips <= 5 ? 'Worn' : '', b = Rules.gearBonus(c, slot), ink = e.on ? C.ink : TB.dim, sh = e.on ? null : C.ink;
+          G.text(ctx, (slot === 'weapon' ? 'ATK +' : 'DEF +') + b + '  ' + pips + '/10' + (tag ? ' ' + tag : ''), x + 8, y + 33 - 12, tag ? (e.on ? C.ink : C.red) : ink, 'left', sh);
+          const gate = Object.entries(it.req || {}).filter(([s, v]) => c[s] < v); if (gate.length) G.text(ctx, gate.map(([s, v]) => s.toUpperCase() + ' ' + v + ' (' + c[s] + ')').join(' '), x + w - 8, y + 21, C.red, 'right', sh); } }); },
+
+    items(ctx) { const c = this.g.s.char, cells = bagCells(c), st = this.state();
+      for (let i = 0; i < 20; i++) { const x = 4 + (i % 5) * 36, y = 36 + Math.floor(i / 5) * 36, s = cells[i];
+        ctx.fillStyle = '#f6eed6'; ctx.fillRect(x + 1, y + 1, 34, 34); ctx.fillStyle = C.panel; ctx.fillRect(x + 2, y + 2, 32, 32);
+        const e = this.el({ id: 'cell-' + i, x, y, w: 36, h: 36, focus: true, act: s ? () => { st.pick = i; } : null });
+        if (s) { drawItemIcon(ctx, s.id, x + 10, y + 6); G.text(ctx, String(s.qty), x + 33, y + 23, TB.text, 'right'); }
+        if (st.pick === i) { ctx.fillStyle = C.gold; ctx.fillRect(x + 2, y + 33, 32, 1); } }
+      const fi = this.els.filter(e => e.act || e.focus).length, pickI = st.i >= 0 && st.i < 20 ? st.i : st.pick, s = cells[pickI != null ? pickI : -1];
+      if (st.i >= 0 && st.i < 20) st.pick = st.i;
+      const X = 192; let y = 38;
+      if (s) { const it = Rules.ITEMS[s.id], cat = Rules.catOf(s.id), each = it.sell || 0;
+        this.txt(ctx, it.name, X, y, C.gold); y += 13; this.txt(ctx, s.qty + '/99  ' + CAT_NAME[cat], X, y); y += 13;
+        this.txt(ctx, each ? 'Sells ' + Rules.fmtMoney(each) + ' each, ' + Rules.fmtMoney(each * s.qty) + ' all' : 'No sell value', X, y, TB.dim); y += 13;
+        for (const l of G.wrap(T(ITEM_LINE[s.id]) || '', 184).slice(0, 2)) { this.txt(ctx, l, X, y); y += 12; }
+        const herb = s.id === 'herb', gear = cat === 'gear', AY = 126;
+        this.btn(ctx, X, AY, 92, ROW, 'Use', () => { const r = Rules.useHerb(c); this.say(r.msg); if (r.ok) this.api.save(); }, { id: 'act-use', dim: !herb, why: "You can't use that here." });
+        this.btn(ctx, X + 94, AY, 92, ROW, 'Equip', () => { const r = Rules.equipFromBag(c, s.id); this.say(r.msg); if (r.ok) this.api.save(); }, { id: 'act-equip', dim: !gear });
+        this.btn(ctx, X, AY + 34, 92, ROW, 'Drop', () => this.confirm('Drop all ' + s.qty + ' ' + it.name + '?', () => { Rules.dropItem(c, s.id); this.api.save(); this.say('Dropped.'); }), { id: 'act-drop', dim: !!it.noDrop, why: "You can't drop that." }); }
+      else { this.txt(ctx, 'Empty slot', X, y, TB.dim); }
+      this.btn(ctx, X + 94, 160, 92, ROW, 'Sort', () => { Rules.sortBag(c); this.api.save(); this.say('Bag sorted.'); }, { id: 'act-sort' });
+      const pk = this.g.s.pack, used = Rules.slotsUsed(c);
+      if (!this.msg) G.text(ctx, gsc(c.coin) + ' - slots ' + used + '/20' + (pk ? ' - Your pack: at ' + (pk.map === 'town' ? 'Kettleby' : 'the meadow') : ''), W - 10, FOOT_Y + 6, TB.dim, 'right');
+      void fi; },
+
+    skills(ctx) { this.txt(ctx, 'No skills yet. Trainers will teach them.', 10, 40);
+      [['Power Swing', 'STR 12'], ['Sidestep', 'DEX 12'], ['First spell', 'Mages Guild: INT 8 + WIS 8']].forEach(([n, g], i) => this.row(ctx, { x: 6, y: 58 + i * 34, w: 372, h: ROW, label: n, right: g, dim: true, rc: TB.dim })); },
+
+    craft(ctx) { const tr = this.g.s.char.trades || {};
+      TRADES.forEach(([k, name, status], i) => { const t = tr[k] || { lv: 1, xp: 0 }, y = 36 + i * 38, next = tradeNext(t.lv);
+        const e = this.row(ctx, { id: 'trade-' + k, x: 6, y, w: 372, h: 36, label: name + '  Lv ' + t.lv, right: 'XP ' + t.xp + ' / ' + next, act: () => this.sub.push(tradeDetail(k, name)) });
+        ctx.fillStyle = C.panel; ctx.fillRect(14, y + 27, 120, 4); ctx.fillStyle = C.gold; ctx.fillRect(14, y + 27, Math.round(120 * t.xp / next), 4);
+        G.text(ctx, status, 370, y + 22, e.on ? C.ink : TB.dim, 'right', e.on ? null : C.ink); });
+      this.txt(ctx, 'Trade XP raises only that trade.', 10, 186 - 2, TB.dim); },
+
+    props(ctx) { const c = this.g.s.char; this.txt(ctx, 'You own no land yet.', W / 2, 80, TB.text, 'center'); this.txt(ctx, 'Homesteads start at 500g.', W / 2, 96, C.gold, 'center');
+      this.txt(ctx, 'You have ' + gsc(c.coin), W / 2, 120, TB.dim, 'center');
+      ctx.fillStyle = C.panel; ctx.fillRect(92, 140, 200, 6); ctx.fillStyle = C.gold; ctx.fillRect(92, 140, Math.max(c.coin > 0 ? 1 : 0, Math.round(200 * Math.min(1, c.coin / 2500000))), 6); },
+
+    journal(ctx) { const c = this.g.s.char, js = this.journalSub(), st = this.state();
+      [['quests', 'Quests'], ['bestiary', 'Bestiary'], ['log', 'Log']].forEach(([k, n], i) => { const e = this.row(ctx, { id: 'jt-' + k, x: 6 + i * 92, y: 36, w: 90, h: ROW, label: n, act: () => { st.sub = k; st.scroll = 0; } });
+        if (k === js && !e.on) { ctx.fillStyle = C.gold; ctx.fillRect(e.x + 6, e.y + 27, e.w - 12, 2); } });
+      const X = 10; let y = 74;
+      if (js === 'quests') this.txt(ctx, 'No quests yet.', X, y, TB.dim);
+      else if (js === 'bestiary') { const b = c.best || {}, keys = Object.keys(Rules.ENEMIES).filter(k => b[k] && b[k].seen);
+        if (!keys.length) this.txt(ctx, 'Nothing seen yet.', X, y, TB.dim);
+        for (const k of keys) { const e = b[k]; this.txt(ctx, Rules.ENEMIES[k].name, X, y, C.gold); this.txt(ctx, 'Seen ' + e.seen + '   Beaten ' + e.beaten, 120, y); y += 13;
+          this.txt(ctx, 'Drops seen: ' + (e.drops.length ? e.drops.map(d => Rules.ITEMS[d].name).join(', ') : '-'), X + 8, y, TB.dim); y += 16; } }
+      else { const log = (c.log || []).slice().reverse(), per = 9, sc = Math.min(st.scroll || 0, Math.max(0, log.length - per));
+        if (!log.length) this.txt(ctx, 'Nothing logged yet.', X, y, TB.dim);
+        log.slice(sc, sc + per).forEach((l, i) => this.txt(ctx, l, X, y + i * 13));
+        if (log.length > per) { ctx.fillStyle = C.panel; ctx.fillRect(372, 72, 4, 118); ctx.fillStyle = '#f6eed6'; ctx.fillRect(372, 72 + Math.round(118 * sc / log.length), 4, Math.round(118 * per / log.length)); } } },
+
+    options(ctx) { const st = this.state(), list = OPTS(this), per = 5, n = list.length;
+      st.i = Math.min(st.i, n - 1); if (st.i >= 0) { if (st.i < (st.scroll || 0)) st.scroll = st.i; if (st.i >= (st.scroll || 0) + per) st.scroll = st.i - per + 1; }
+      const sc = st.scroll = Math.max(0, Math.min(st.scroll || 0, n - per));
+      // invisible stand-ins keep focus indices = option indices (rows above/below the scroll window are not tappable)
+      list.forEach((o, i) => { const vis = i >= sc && i < sc + per, y = 36 + (i - sc) * 32;
+        if (vis) this.row(ctx, { id: 'opt-' + o.k, x: 6, y, w: 366, h: ROW, label: o.label, right: o.value(), act: () => o.cycle(1) });
+        else this.el({ id: 'opt-' + o.k, x: -999, y: -999, w: 0, h: 0, focus: true }); });
+      ctx.fillStyle = C.panel; ctx.fillRect(374, 36, 4, 160); ctx.fillStyle = '#f6eed6'; ctx.fillRect(374, 36 + Math.round(160 * sc / n), 4, Math.round(160 * per / n)); },
+  };
+  P.journalSub = function () { const st = this.state('journal'); return ['quests', 'bestiary', 'log'].includes(st.sub) ? st.sub : 'quests'; };
+  function optionsNav(b) { const st = this.state(), n = OPTS(this).length;
+    if (b === 'up') { if (st.i <= 0) st.i = -1; else st.i--; return true; } if (b === 'down') { st.i = Math.min(n - 1, st.i + 1); return true; }
+    if (b === 'left' || b === 'right') { OPTS(this)[st.i].cycle(b === 'left' ? -1 : 1); return true; } if (b === 'A') { OPTS(this)[st.i].cycle(1); return true; } return false; }
+  function logNav(b) { const st = this.state(); if (st.i >= 3 || st.i < 0) return false; // on the sub-tab row: left/right move; up/down scroll the log
+    if (b === 'down') { st.scroll = Math.min(Math.max(0, ((this.g.s.char.log || []).length) - 9), (st.scroll || 0) + 1); return true; }
+    if (b === 'up') { if ((st.scroll || 0) > 0) { st.scroll--; return true; } st.i = -1; return true; } return false; }
+
+  function OPTS(m) { const o = m.api.opts(), set = (k, v) => { o[k] = v; m.api.applyOpts(); };
+    const cyc = (k, vals) => d => set(k, vals[(vals.indexOf(o[k]) + d + vals.length) % vals.length]), num = k => d => set(k, (o[k] + d + 11) % 11);
+    return [
+      { k: 'speed', label: 'Text speed', value: () => ({ 30: 'Normal', 15: 'Fast', 0: 'Instant' })[o.speed], cycle: cyc('speed', [30, 15, 0]) },
+      { k: 'music', label: 'Music', value: () => String(o.music), cycle: num('music') },
+      { k: 'sfx', label: 'Sound effects', value: () => String(o.sfx), cycle: num('sfx') },
+      { k: 'pad', label: 'Pad opacity', value: () => String(o.pad).replace(/^0/, ''), cycle: cyc('pad', [0.45, 0.3, 0.15]) },
+      { k: 'fade', label: 'Pad fade', value: () => o.fade ? 'On' : 'Off', cycle: () => set('fade', !o.fade) },
+      { k: 'hand', label: 'Handedness', value: () => o.hand === 'left' ? 'D-pad right' : 'D-pad left', cycle: () => set('hand', o.hand === 'left' ? 'right' : 'left') },
+      { k: 'fs', label: 'Full screen', value: () => m.api.fsOn() ? 'On' : 'Off', cycle: () => m.api.fsToggle() },
+      { k: 'save', label: 'Save now', value: () => '', cycle: () => { m.persist(); m.api.save(); m.say('Your journey is saved.'); } },
+      { k: 'controls', label: 'Controls', value: () => '', cycle: () => m.sub.push(controlsPage()) }]; }
+
+  function equipList(slot) { return { i: 0, title: 'Equip: ' + (slot === 'weapon' ? 'Weapon' : 'Body'), draw(ctx, sub) { const c = this.g.s.char, fits = (c.bag || []).filter(s => Rules.ITEMS[s.id] && Rules.ITEMS[s.id].slot === slot), stat = slot === 'weapon' ? 'atk' : 'def';
+    const now = Rules.derive(c)[stat]; let y = 38;
+    if (!fits.length) { this.txt(ctx, 'Nothing in your bag fits.', 12, y + 10, TB.dim); y += 34; }
+    for (const s of fits) { const it = Rules.ITEMS[s.id], tmp = JSON.parse(JSON.stringify(c)); Rules.equipFromBag(tmp, s.id); const after = Rules.derive(tmp)[stat];
+      this.row(ctx, { id: 'fit-' + s.id, x: 6, y, w: 372, h: ROW, label: it.name, right: stat.toUpperCase() + ' ' + now + ' > ' + after, rc: after > now ? C.green : after < now ? C.red : TB.text, act: () => { const r = Rules.equipFromBag(c, s.id); this.say(r.msg); if (r.ok) { this.api.save(); this.sub.pop(); } } }); y += 34; }
+    this.row(ctx, { id: 'unequip', x: 6, y, w: 372, h: ROW, label: 'Unequip', dim: !c[slot], act: () => { const r = Rules.unequip(c, slot); this.say(r.msg); if (r.ok) { this.api.save(); this.sub.pop(); } } }); } }; }
+  function tradeDetail(k, name) { return { i: 0, title: name, draw(ctx) { this.txt(ctx, name + ': recipes and tiers', 12, 40, C.gold);
+    this.txt(ctx, 'No recipes known yet.', 12, 60); this.txt(ctx, 'Auto unlocked: no', 12, 76, TB.dim); this.txt(ctx, 'Crafting happens at a station.', 12, 92, TB.dim); } }; }
+  function controlsPage() { return { i: 0, title: 'Controls', draw(ctx) { const L = [['Open / close', 'Menu button, B - Esc, M'], ['Next / prev tab', 'Tap or swipe a tab - E / Q'], ['Move cursor', 'D-pad - arrows, WASD'], ['Select', 'A - Z, Enter, Space'], ['Back', 'B - X']];
+    L.forEach(([a, b], i) => { this.txt(ctx, a, 12, 40 + i * 24, C.gold); this.txt(ctx, b, 130, 40 + i * 24); }); } }; }
+
+  function bagCells(c) { return [...(c.herbs > 0 ? [{ id: 'herb', qty: c.herbs }] : []), ...(c.bag || [])]; }
+  // Placeholder pictograms until Art's 16x16 icons land (art-pass §6.1 icons).
+  function drawItemIcon(ctx, id, x, y) { const it = Rules.ITEMS[id] || {}, R = (a, b, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(x + a, y + b, w, h); };
+    if (id === 'herb') { R(7, 4, 2, 10, '#3e7a3a'); R(3, 4, 4, 4, '#5ca048'); R(9, 2, 4, 4, '#7cc060'); R(4, 9, 3, 3, '#5ca048'); }
+    else if (it.slot === 'weapon') { const col = id === 'copperSword' ? '#d08850' : id === 'club' ? '#8a5a30' : '#b48450'; R(7, 1, 2, 10, col); R(4, 11, 8, 2, '#5c4a3a'); R(7, 13, 2, 3, '#3a2420'); }
+    else if (it.slot === 'armor') { const col = id === 'leatherVest' ? '#946038' : '#7a8a50'; R(3, 3, 10, 11, col); R(6, 3, 4, 3, C.panel); R(1, 4, 2, 5, col); R(13, 4, 2, 5, col); }
+    else if (id === 'fluff') { R(3, 5, 10, 8, '#f0e0c0'); R(5, 3, 6, 2, '#fff6dc'); R(4, 13, 8, 1, '#c8b090'); }
+    else if (id === 'gland') { R(4, 4, 8, 9, '#c86878'); R(6, 5, 3, 2, '#f0a0b0'); }
+    else R(4, 4, 8, 8, TB.dim); }
+  function drawTabIcon(ctx, k, cx, y, on) { const col = on ? C.ink : '#c8c0b0', R = (a, b, w, h) => { ctx.fillStyle = col; ctx.fillRect(cx - 6 + a, y + b, w, h); };
+    ({ status() { R(4, 0, 4, 4); R(2, 5, 8, 6); }, equip() { R(5, 0, 2, 9); R(2, 8, 8, 2); R(5, 10, 2, 2); }, items() { R(2, 3, 8, 9); R(4, 1, 4, 2); },
+      skills() { R(5, 0, 2, 12); R(2, 3, 8, 2); }, craft() { R(1, 2, 8, 4); R(4, 6, 2, 6); R(9, 3, 2, 2); }, props() { R(1, 5, 10, 7); R(3, 2, 6, 3); R(5, 0, 2, 2); },
+      journal() { R(2, 0, 8, 12); ctx.fillStyle = on ? '#f4cc5c' : C.panel; ctx.fillRect(cx - 2, y + 3, 4, 1); ctx.fillRect(cx - 2, y + 6, 4, 1); }, options() { R(4, 0, 4, 12); R(0, 4, 12, 4); ctx.fillStyle = on ? '#f4cc5c' : C.panel; ctx.fillRect(cx - 2, y + 4, 4, 4); } })[k](); }
+
+  // ---- station pages (spec A §3.3) ----
+  const gearDelta = (c, id) => { const it = Rules.ITEMS[id]; if (!it.slot) return null; const st = it.slot === 'weapon' ? 'atk' : 'def', tmp = JSON.parse(JSON.stringify(c)); tmp[it.slot] = id; tmp.dur[it.slot] = Rules.MAX_PIPS; return [st.toUpperCase(), Rules.derive(c)[st], Rules.derive(tmp)[st]]; };
+  const have = (c, id) => id === 'herb' ? c.herbs : (c[Rules.ITEMS[id].slot] === id ? 1 : 0) + ((c.bag || []).find(s => s.id === id) || { qty: 0 }).qty;
+  function goodsList(ctx, ids, onBuy) { const c = this.g.s.char, st = this.state();
+    ids.forEach((id, i) => { const it = Rules.ITEMS[id], gate = Object.entries(it.req || {}).filter(([s, v]) => c[s] < v), y = 36 + i * 34;
+      const e = this.row(ctx, { id: 'buy-' + id, x: 6, y, w: 226, h: ROW, label: '    ' + it.name, right: Rules.fmtMoney(it.price), twoTap: true, act: () => onBuy(id) });
+      drawItemIcon(ctx, id, 10, y + 8); G.text(ctx, 'have ' + have(c, id), 150, y + 11, e.on ? C.ink : TB.dim, 'right', e.on ? null : C.ink);
+      if (gate.length) G.text(ctx, gate.map(([s, v]) => s.toUpperCase() + ' ' + v + ' (' + c[s] + ')').join(' '), 150, y + 1, C.red, 'right', null); });
+    const id = ids[Math.max(0, Math.min(ids.length - 1, st.i))], it = Rules.ITEMS[id], X = 240; let y = 38;
+    this.txt(ctx, it.name, X, y, C.gold); y += 14; for (const l of G.wrap(T(ITEM_LINE[id]) || '', 136).slice(0, 4)) { this.txt(ctx, l, X, y); y += 12; }
+    const d = gearDelta(c, id); if (d) { y += 4; this.txt(ctx, d[0] + ' ' + d[1] + ' > ' + d[2], X, y, d[2] > d[1] ? C.green : d[2] < d[1] ? C.red : TB.text); }
+    if (!this.msg) G.text(ctx, 'Purse ' + Rules.fmtMoney(c.coin) + ' - slots ' + Rules.slotsUsed(c) + '/20', W - 10, FOOT_Y + 6, TB.dim, 'right'); }
+  const SHOP_GOODS = ['herb', 'leatherVest', 'woodenSword'], FORGE_GOODS = ['copperSword']; // D13: the copper sword is Hal's
+  const SHOP = { station: 'shop', tabs: [['buy', 'Buy'], ['sell', 'Sell']], titles: { buy: "Wenna's store: Buy", sell: "Wenna's store: Sell" }, tabW: 96, pages: {
+    buy(ctx) { goodsList.call(this, ctx, SHOP_GOODS, id => this.api.buy(id, 'shop')); },
+    sell(ctx) { const c = this.g.s.char, cells = bagCells(c), st = this.state();
+      for (let i = 0; i < 20; i++) { const x = 4 + (i % 5) * 36, y = 36 + Math.floor(i / 5) * 36, s = cells[i];
+        ctx.fillStyle = '#f6eed6'; ctx.fillRect(x + 1, y + 1, 34, 34); ctx.fillStyle = C.panel; ctx.fillRect(x + 2, y + 2, 32, 32);
+        this.el({ id: 'cell-' + i, x, y, w: 36, h: 36, focus: true });
+        if (s) { drawItemIcon(ctx, s.id, x + 10, y + 6); G.text(ctx, String(s.qty), x + 33, y + 23, TB.text, 'right'); const v = Rules.ITEMS[s.id].sell; if (v) G.text(ctx, v + 'c', x + 4, y + 2, C.gold); } }
+      if (st.i >= 0 && st.i < 20) st.pick = st.i; const s = cells[st.pick != null ? st.pick : -1], X = 192; let y = 38;
+      if (s) { const it = Rules.ITEMS[s.id], each = it.sell || 0; this.txt(ctx, it.name + '  x' + s.qty, X, y, C.gold); y += 13;
+        this.txt(ctx, each ? Rules.fmtMoney(each) + ' each, ' + Rules.fmtMoney(each * s.qty) + ' all' : "Wenna doesn't buy that.", X, y, each ? TB.text : TB.dim);
+        [[1, 'Sell 1'], [10, 'Sell 10'], [s.qty, 'Sell all']].forEach(([q, l], k) => this.btn(ctx, X + k * 62, 92, 60, ROW, l, () => this.api.sellStack(s.id, Math.min(q, s.qty)), { id: 'sell-' + ['1', '10', 'all'][k], dim: !each || (q === 10 && s.qty < 10), why: !each ? "Wenna doesn't buy that." : null })); }
+      else this.txt(ctx, 'Pick a stack to sell.', X, y, TB.dim);
+      const lv = Rules.lootValue(c); this.btn(ctx, X, 140, 186, ROW, 'Sell all loot', () => this.api.sellLoot(), { id: 'sell-loot', right: lv ? Rules.fmtMoney(lv) : '', dim: !lv, why: 'You have nothing to sell.' });
+      if (!this.msg) G.text(ctx, 'Purse ' + Rules.fmtMoney(c.coin) + ' - slots ' + Rules.slotsUsed(c) + '/20', W - 10, FOOT_Y + 6, TB.dim, 'right'); } } };
+  const FORGE = { station: 'forge', tabs: [['forge', "Hal's forge"]], titles: { forge: "Hal's forge" }, tabW: 192, pages: {
+    forge(ctx) { const c = this.g.s.char, cost = Rules.repairCost(c), it = Rules.ITEMS.copperSword, gate = Object.entries(it.req).filter(([s, v]) => c[s] < v);
+      const b = this.row(ctx, { id: 'forge-buy', x: 6, y: 36, w: 372, h: ROW, label: 'Buy ' + it.name, right: Rules.fmtMoney(it.price), twoTap: true, act: () => this.api.buy('copperSword', 'forge') });
+      if (gate.length) G.text(ctx, gate.map(([s, v]) => s.toUpperCase() + ' ' + v + ' (' + c[s] + ')').join(' '), 300, 47, b.on ? C.ink : C.red, 'right', null);
+      this.row(ctx, { id: 'forge-repair', x: 6, y: 70, w: 372, h: ROW, label: 'Repair  (gear ' + c.dur.weapon + '/' + c.dur.armor + ')', right: cost ? Rules.fmtMoney(cost) : 'nothing to mend', dim: !cost, why: 'Your gear is in good shape.', act: () => this.api.repair() });
+      this.row(ctx, { id: 'forge-jobs', x: 6, y: 104, w: 372, h: ROW, label: 'Apprentice jobs', right: 'Not open yet', dim: true, rc: TB.dim, why: 'Not open yet.' });
+      this.row(ctx, { id: 'forge-smith', x: 6, y: 138, w: 372, h: ROW, label: 'Smith your own', right: 'Not open yet', dim: true, rc: TB.dim, why: 'Not open yet.' });
+      if (!this.msg) G.text(ctx, 'Purse ' + Rules.fmtMoney(c.coin), W - 10, FOOT_Y + 6, TB.dim, 'right'); } } };
+  root.FullMenu = { SHOP, FORGE, FullMenu, TABS, TAB_W, TAB_H, ROW, bagCells, tradeNext };
 })(this);
 
 </script>
@@ -847,23 +1249,23 @@ body.portrait .round .vis{font-size:22px}
 </script><script>
 // game.js — Hearthwood M1 main: state, input (pads + keys + taps), creator, field (overworld/town), shops, save/load.
 (function (root) {
-  const { Rules, World, Art, Gfx: G, TextBox: TBX, NameGrid, Bumblet, Text } = root, BM = root.Battle, T = Text.T;
+  const { Rules, World, Art, Gfx: G, TextBox: TBX, NameGrid, Bumblet, Text, FullMenu: FM } = root, BM = root.Battle, T = Text.T;
   const W = 384, H = 216, TS = 16, STEP_MS = 240, BUM_STEP_MS = 320, RESPAWN_MS = 60000, SAVE_KEY = 'hearthwood.save';
   const cv = document.getElementById('cv'), ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
-  const maps = { overworld: World.makeOverworld(), town: World.makeTown() };
+  const maps = { overworld: World.makeOverworld(), town: World.makeTown() }; for (const id of World.INTERIORS) maps[id] = World.makeInterior(id);
   const game = { s: null, mode: 'creator', rng: Rules.mulberry32((Date.now() ^ (Math.random() * 1e9)) | 0), ov: [], held: [], battle: null, fade: null, now: 0,
     pl: { x: 0, y: 0, dir: 'down', move: null, frame: 0, walkT: 0 }, cr: { race: 'human', body: 'joe', name: '', sel: 0 }, bums: [] };
   const map = () => maps[game.s.map];
 
   // ---------- save / load ----------
-  function snapshot() { const p = game.pl; return { char: game.s.char, pack: game.s.pack || null, map: game.s.map, x: p.x, y: p.y, dir: p.dir, time: game.s.time, bums: game.bums.map(b => ({ x: b.x, y: b.y, hx: b.hx, hy: b.hy, alive: b.alive, respawnAt: b.respawnAt })),
+  function snapshot() { const p = game.pl; return { char: game.s.char, pack: game.s.pack || null, map: game.s.map, x: p.x, y: p.y, dir: p.dir, time: game.s.time, menu: game.s.menu || null, bums: game.bums.map(b => ({ x: b.x, y: b.y, hx: b.hx, hy: b.hy, alive: b.alive, respawnAt: b.respawnAt })),
     battle: game.mode === 'battle' && game.battle && !game.battle.b.over ? { b: game.battle.b, bum: game.bums.indexOf(game.battleBum) } : null }; }
   function save() { localStorage.setItem(SAVE_KEY, Rules.serialize(snapshot())); }
   const DEFAULT_BUMS = () => [{ x: 19, y: 16, hx: 19, hy: 16, alive: true, respawnAt: 0, move: null, wait: 1500 }];
   // A save that can't be used is rotated into SAVE_KEY.bak/.bak2/.bak3 (newest first) and the game starts fresh (QA d8e477a #3).
   function load() { const raw = localStorage.getItem(SAVE_KEY); if (!raw) return false; const r = Rules.parseSave(raw);
     if (!r.ok) { Rules.rotateBackup(localStorage, SAVE_KEY, raw); game.loadError = r.error; return false; }
-    const o = r.state; game.s = { char: o.char, map: o.map, time: o.time, pack: o.pack }; const sp = World.safeSpawn(maps[o.map], o.x, o.y, o.dir); Object.assign(game.pl, { x: sp.x, y: sp.y, dir: sp.dir, move: null });
+    const o = r.state; game.s = { char: o.char, map: o.map, time: o.time, pack: o.pack, menu: o.menu }; const sp = World.safeSpawn(maps[o.map], o.x, o.y, o.dir); Object.assign(game.pl, { x: sp.x, y: sp.y, dir: sp.dir, move: null });
     game.bums = (o.bums && o.bums.length ? o.bums : DEFAULT_BUMS()).map(b => ({ ...b, move: null, wait: 1000 })); game.mode = 'field';
     if (o.battle && game.bums[o.battle.bum]) startBattle(game.bums[o.battle.bum], o.battle.b);
     return true; }
@@ -914,10 +1316,12 @@ body.portrait .round .vis{font-size:22px}
   const grassAt = (i, j) => Art.grass(G.hash(i, j) % 24);
 
   // ---------- field ----------
-  const npcAt = (x, y) => game.s.map === 'town' && map().npcs.find(n => n.x === x && n.y === y);
+  const npcAt = (x, y) => (map().npcs || []).find(n => n.x === x && n.y === y);
   const bumAt = (x, y) => game.s.map === 'overworld' && game.bums.find(b => b.alive && b.x === x && b.y === y);
   function tryStep(dir) {
-    const p = game.pl; p.dir = dir; const [dx, dy] = World.DIRS[dir], nx = p.x + dx, ny = p.y + dy, m = map();
+    const p = game.pl; p.dir = dir; const [dx, dy] = World.DIRS[dir], nx = p.x + dx, ny = p.y + dy, m = map(), here = World.tileAt(m, p.x, p.y);
+    if (here === 'D' && dir === 'up' && game.s.map === 'town') return enterDoor(); // standing on the door (e.g. after closing the menu there): up goes in
+    if (here === 'm' && dir === 'down' && m.interior) return leaveRoom(); // down on the doormat leaves
     const b = bumAt(nx, ny); if (b) return startBattle(b);
     const n = npcAt(nx, ny); if (n) { n.dir = { up: 'down', down: 'up', left: 'right', right: 'left' }[dir]; return talk(n); }
     const sg = signAt(nx, ny); if (sg) { p.blocked = true; return say(T(sg.text)); }
@@ -928,59 +1332,71 @@ body.portrait .round .vis{font-size:22px}
     const p = game.pl, t = World.tileAt(map(), p.x, p.y), pk = game.s.pack;
     if (pk && pk.map === game.s.map && pk.x === p.x && pk.y === p.y) { const r = Rules.pickupPack(game.s.char, pk); game.s.pack = r.pack; save(); say(!r.took ? 'No room. Your pack stays here.' : [T('m1.pack.pickup'), `You take ${r.took} ${Rules.ITEMS[pk.id].name}.` + (r.pack ? ` ${r.pack.qty} won't fit; the rest stays here.` : '')]); return; }
     if (game.s.map === 'overworld' && t === 'T') changeMap('town', maps.town.start, () => { const c = game.s.char; c.seen = c.seen || {}; if (!c.seen.kettleby) { c.seen.kettleby = 1; save(); say(T('m1.arrive.01')); } });
+    else if (game.s.map === 'town' && t === 'D' && p.dir === 'up') enterDoor();
+    else if (map().interior && t === 'm' && p.dir === 'down') leaveRoom();
     else if (game.s.map === 'town' && t === 'E') { const tw = maps.overworld.town; changeMap('overworld', { x: tw.x, y: tw.y + 1, dir: 'down' }); }
   }
+  // Doors (spec A §3.1): D facing up -> the room's doormat facing up; doormat facing down -> the tile below the door facing down.
+  function enterDoor() { const p = game.pl, b = maps.town.buildings.find(b => b.door && b.door.x === p.x && b.door.y === p.y && b.interior); if (!b) return; const r = maps[b.interior]; changeMap(b.interior, { x: r.mat.x, y: r.mat.y, dir: 'up' }); }
+  function leaveRoom() { const id = game.s.map, b = maps.town.buildings.find(b => b.interior === id), c = game.s.char;
+    if (id === 'inn') Rules.declineInn(c); // §3.4.5: leaving the inn with a free rest pending = declined = lost
+    changeMap('town', { x: b.door.x, y: b.door.y + 1, dir: 'down' }); }
   function changeMap(id, pos, cb) {
     game.held = []; game.fade = { t: 0, dur: 360, mid: () => { game.s.map = id; Object.assign(game.pl, { x: pos.x, y: pos.y, dir: pos.dir, move: null }); save(); }, done: cb };
   }
-  // PLACEHOLDER for Lore (no approved line fits): Hal's warning before a repair that leaves you short of the inn at low HP.
-  const HAL_WARN = 'That leaves you under ' + Rules.INN_PRICE + 'c, short of a bed at the inn. Repair anyway?';
   function talk(n) {
     const c = game.s.char;
-    const doRepair = () => { const r = Rules.repair(c); say(r.ok ? [T(Rules.repairCost(c) ? 'm1.hal.partial' : 'm1.hal.repaired'), `${r.pips} pip${r.pips > 1 ? 's' : ''} mended for ${Rules.fmtMoney(r.cost)}.`] : 'You have no coin for repairs.'); save(); };
-    if (n.id === 'innkeeper') say(T('m1.fitch.greet'), () => menu({ title: purse, items: [
-      { label: 'Stay the night', right: () => Rules.pityNow(c) ? 'free' : Rules.INN_PRICE + 'c', act: () => { pop(); const r = Rules.rest(c); say(r.ok ? (r.free ? T('m1.fitch.pity') : [T('m1.fitch.rest'), 'HP fully restored.']) : r.full ? r.msg : T('m1.fitch.poor')); save(); } },
-      { label: 'No thanks', act: () => { pop(); if (Rules.declineInn(c)) save(); } }], onCancel: function () { pop(this); if (Rules.declineInn(c)) save(); } }));
-    else if (n.id === 'shopkeeper') say(T('m1.wenna.greet'), () => {
-      const ITEM_LINE = { herb: 'm1.item.herb', leatherVest: 'm1.item.vest', copperSword: 'm1.item.sword', woodenSword: 'm1.item.woodsword' };
-      const buy = id => () => { const r = Rules.buy(c, id); say(r.ok ? [T(id === 'woodenSword' ? 'm1.wenna.woodsword' : 'm1.wenna.buy'), T(ITEM_LINE[id])] : r.gate || r.full ? r.msg : T('m1.wenna.poor')); if (r.ok) save(); };
-      const m = menu({ title: purse, cols: 2, w: 196, items: [ // 3x2 grid: y 12..120, clear of the dialogue box (y 140+)
-        { label: 'Herb (you have ' + c.herbs + ')', right: Rules.fmtMoney(Rules.ITEMS.herb.price), act: buy('herb') },
-        { label: 'Leather Vest', right: Rules.fmtMoney(90), act: buy('leatherVest') },
-        { label: 'Wooden Sword', right: Rules.fmtMoney(75), act: buy('woodenSword') },
-        { label: 'Copper Sword', right: Rules.fmtMoney(120), locked: () => !Rules.meetsReq(c, 'copperSword'), tag: 'STR 8', act: buy('copperSword') },
-        { label: 'Sell loot', right: () => Rules.lootValue(c) > 0 ? Rules.fmtMoney(Rules.lootValue(c)) : '', /* no price line at 0 loot */ act: () => { const r = Rules.sellLoot(c); say(r.ok ? [T('m1.wenna.sell'), r.msg] : r.msg); if (r.ok) save(); } },
-        { label: 'Leave', act: () => { pop(m); say(T('m1.wenna.idle')); } }] });
-      Object.defineProperty(m.items[0], 'label', { get: () => 'Herb (have ' + c.herbs + ')' }); });
-    else if (n.id === 'smith') { const L = ['m1.hal.greet', 'm1.hal.sword', 'm1.hal.nomagic', 'm1.hal.idle']; const line = T(L[(n.talks = (n.talks || 0) + 1) - 1 & 3]);
-      if (!Rules.repairCost(c)) return say(line);
-      say(T(c.dur.weapon === 0 || c.dur.armor === 0 ? 'm1.hal.broken' : 'm1.hal.worn'), () => menu({ title: () => purse() + '   Gear ' + c.dur.weapon + '/' + c.dur.armor, items: [
-        { label: 'Repair gear', right: () => Rules.fmtMoney(Rules.repairCost(c)), act: () => { pop(); if (!Rules.repairWarn(c)) return doRepair();
-          say(HAL_WARN, () => menu({ title: purse, items: [{ label: 'Repair anyway', act: () => { pop(); doRepair(); } }, { label: 'Not now', act: () => pop() }] })); } },
-        { label: 'Not now', act: () => pop() }] })); }
+    if (n.id === 'innkeeper') { // Fitch's rest flow (§3.4)
+      if (Rules.pityNow(c)) return say(T('m1.fitch.pity'), () => menu({ title: purse, items: [
+        { label: 'Rest free', right: 'free', act: () => { pop(); Rules.rest(c); Rules.logLine(c, 'Fitch: free rest'); save(); } },
+        { label: 'No thanks', act: () => { pop(); Rules.declineInn(c); save(); } }], onCancel: function () { pop(this); Rules.declineInn(c); save(); } }));
+      if (c.hp >= c.maxHp) return say("You're already rested.");
+      return say(T('m1.fitch.greet'), () => menu({ title: purse, items: [
+        { label: 'Stay the night', right: Rules.INN_PRICE + 'c', act: () => { pop(); const r = Rules.rest(c); say(r.ok ? [T('m1.fitch.rest'), 'HP fully restored.'] : T('m1.fitch.poor')); save(); } },
+        { label: 'No thanks', act: () => pop() }] })); }
+    else if (n.id === 'shopkeeper') say(T('m1.wenna.greet'), () => openStation(FM.SHOP));
+    else if (n.id === 'smith') { const L = ['m1.hal.greet', 'm1.hal.sword', 'm1.hal.nomagic', 'm1.hal.idle'];
+      const line = Rules.repairCost(c) ? T(c.dur.weapon === 0 || c.dur.armor === 0 ? 'm1.hal.broken' : 'm1.hal.worn') : T(L[(n.talks = (n.talks || 0) + 1) - 1 & 3]);
+      say(line, () => openStation(FM.FORGE)); }
     else { const L = ['m1.townsfolk.01', 'm1.townsfolk.02', 'm1.townsfolk.03']; say(T(L[((n.talks = (n.talks || 0) + 1) - 1) % 3])); }
   }
   const signAt = (x, y) => (map().signs || []).find(s => s.x === x && s.y === y);
-  function talkFacing() { const p = game.pl, [dx, dy] = World.DIRS[p.dir], n = npcAt(p.x + dx, p.y + dy), sg = signAt(p.x + dx, p.y + dy); if (n) talk(n); else if (sg) say(T(sg.text)); }
-  function fieldMenu() {
-    const c = game.s.char, d = Rules.derive(c);
-    menu({ title: c.name + '  Lv ' + c.lvl, cols: 2, items: [ // 2x2 grid: y 12..92, clear of the dialogue box (Status opens its dialog over it)
-      { label: 'Status', act: () => (Rules.FLAGS.levelUp && c.points > 0) ? pointsMenu() : say([`${Rules.RACES[c.race].name}. HP ${c.hp}/${c.maxHp}. ATK ${d.atk} DEF ${d.def}.`, `STR ${c.str} DEX ${c.dex} VIT ${c.vit} INT ${c.int} WIS ${c.wis}. XP ${c.xp}.`, `${Rules.ITEMS[c.weapon].name} ${c.dur.weapon}/10, ${Rules.ITEMS[c.armor].name} ${c.dur.armor}/10. Herbs ${c.herbs}. ${purse()}.`]) },
-      { label: 'Items', act: () => { const L = { club: 'm1.item.stick', woodenSword: 'm1.item.woodsword', copperSword: 'm1.item.sword', leatherVest: 'm1.item.vest', herb: 'm1.item.herb', fluff: 'm1.item.fluff', gland: 'm1.item.gland' };
-        const ids = [c.weapon, c.armor, ...(c.herbs ? ['herb'] : []), ...(c.bag || []).map(s => s.id)].filter(id => L[id]); say(ids.map(id => T(L[id]) + (id === 'herb' ? ' (x' + c.herbs + ')' : (c.bag || []).find(s => s.id === id) ? ' (x' + c.bag.find(s => s.id === id).qty + ')' : ''))); } },
-      { label: 'Save', act: () => { save(); pop(); say('Your journey is saved.'); } },
-      { label: 'Close', act: () => pop() }] });
-  }
-  // Battle state is saved every round, and outcomes apply the moment a round ends (not when the text finishes),
-  // so reloading mid-fight resumes it and is never a free escape (QA d8e477a #3).
-  // Stat-point spend (FLAGS.levelUp only; OFF in M1 builds). One tap spends one point; the menu closes when none are left.
-  function pointsMenu() {
-    const c = game.s.char, m = menu({ title: () => 'Stat points: ' + (c.points || 0), cols: 2, /* 3x2 grid: y 12..120 */ items: Rules.STATS.map(st => ({ label: st.toUpperCase(), right: () => String(c[st]),
-      act: () => { if (Rules.spendPoint(c, st)) { save(); if (!(c.points > 0)) { pop(m); say(`${st.toUpperCase()} is now ${c[st]}.`); } } } })) });
-    return m;
-  }
+  function talkFacing() { const p = game.pl, [dx, dy] = World.DIRS[p.dir], fx = p.x + dx, fy = p.y + dy, n = npcAt(fx, fy), sg = signAt(fx, fy), ft = World.tileAt(map(), fx, fy);
+    if (n) return talk(n); if (sg) return say(T(sg.text));
+    if (ft === 'K') { const b = npcAt(fx + dx, fy + dy); if (b) talk(b); return; } // §3.2: reach 2 across a counter; an empty counter does nothing
+    if (ft === 'A' && game.s.map === 'forge') return say("Hal's anvil. Not yours yet.");
+    if (ft === 'H' && game.s.map === 'shop') { const w = map().npcs.find(n => n.id === 'shopkeeper'); if (w) talk(w); } } // the shop shelf is a station: Wenna's Buy/Sell
+  // The full-screen menu (ui-fullscreen-interiors §2): ≡, B in the field, Esc/M. Blocked in battle, dialogue, fades, the rotate card;
+  // a press mid-step opens it when the step ends (<= 240 ms).
+  const menuOpen = () => game.ov.find(o => o.full);
+  function menuButton() { if (game.mode !== 'field' || game.fade || top() instanceof TBX.Dialog) return; const m = menuOpen(); if (m) return m.close(); const o = top();
+    if (!o) openMenu(); else if (o.items && o.onCancel) o.onCancel(); }
+  function openMenu() { if (game.mode !== 'field' || game.fade || top()) return; if (game.pl.move) { game.menuQueued = true; return; }
+    game.held = []; game.menuQueued = false; const m = new FM.FullMenu(game, menuApi); game.ov.push(m); document.body.classList.add('menu'); return m; }
+  const menuApi = { save: () => save(), closed: m => { pop(m); document.body.classList.remove('menu'); }, opts: () => game.opts, applyOpts: () => { applyOpts(); saveOpts(); },
+    fsOn: () => game.fs.standalone() || (game.fs.fsApi() ? !!(document.fullscreenElement || document.webkitFullscreenElement) || localStorage.getItem('hearthwood.fs') === 'on' : false),
+    fsToggle: () => { if (!game.fs.fsApi()) { if (!game.fs.standalone()) game.fs.showPlay(true); return; } // iPhone: the Add to Home Screen steps
+      const on = menuApi.fsOn(); localStorage.setItem('hearthwood.fs', on ? 'off' : 'on'); if (on) { if (document.exitFullscreen && document.fullscreenElement) document.exitFullscreen().catch(() => {}); } else game.fs.requestFs(); } };
+  // Station pages (§3.3): Wenna's Buy/Sell and Hal's forge, full screen like the menu. Lines still play in the dialogue box.
+  const ITEM_LINE = { herb: 'm1.item.herb', leatherVest: 'm1.item.vest', copperSword: 'm1.item.sword', woodenSword: 'm1.item.woodsword' };
+  function openStation(cfg) { game.held = []; const m = new FM.FullMenu(game, stationApi, cfg); game.ov.push(m); document.body.classList.add('menu'); return m; }
+  const stationApi = { ...menuApi,
+    buy: (id, where) => { const c = game.s.char, r = Rules.buy(c, id);
+      say(r.ok ? [where === 'forge' ? r.msg : T(id === 'woodenSword' ? 'm1.wenna.woodsword' : 'm1.wenna.buy'), T(ITEM_LINE[id])] : r.gate || r.full ? r.msg : where === 'forge' ? 'Not enough coin.' : T('m1.wenna.poor')); if (r.ok) save(); },
+    sellStack: (id, q) => { const r = Rules.sellStack(game.s.char, id, q); say(r.ok ? [T('m1.wenna.sell'), r.msg] : r.msg); if (r.ok) save(); },
+    sellLoot: () => { const r = Rules.sellLoot(game.s.char); say(r.ok ? [T('m1.wenna.sell'), r.msg] : r.msg); if (r.ok) save(); },
+    repair: () => { const c = game.s.char, page = menuOpen(), doRepair = () => { const r = Rules.repair(c); say(r.ok ? [T(Rules.repairCost(c) ? 'm1.hal.partial' : 'm1.hal.repaired'), `${r.pips} pip${r.pips > 1 ? 's' : ''} mended for ${Rules.fmtMoney(r.cost)}.`] : 'You have no coin for repairs.'); save(); };
+      if (!Rules.repairWarn(c)) return doRepair();
+      say(T('m1.hal.brokewarn'), () => page.sub.push({ i: 1, title: 'Repair?', draw(ctx) { this.txt(ctx, 'Repair anyway?', W / 2, 80, '#f0ecdc', 'center');
+        this.btn(ctx, 70, 112, 116, 32, 'Repair anyway', () => { this.sub.pop(); doRepair(); }, { id: 'warn-yes' }); this.btn(ctx, 198, 112, 116, 32, 'Not now', () => this.sub.pop(), { id: 'warn-no' }); } })); } };
+  // Options (§2.10): stored apart from the save so they apply on the title screen too.
+  const OPTS_KEY = 'hearthwood.opts', OPT_DEF = { speed: 30, music: 7, sfx: 7, pad: 0.45, fade: true, hand: 'right' };
+  game.opts = (() => { try { const o = JSON.parse(localStorage.getItem(OPTS_KEY) || '{}'); return { ...OPT_DEF, ...(o && typeof o === 'object' ? o : {}) }; } catch (_) { return { ...OPT_DEF }; } })();
+  for (const [k, ok] of [['speed', v => [30, 15, 0].includes(v)], ['music', v => Number.isInteger(v) && v >= 0 && v <= 10], ['sfx', v => Number.isInteger(v) && v >= 0 && v <= 10], ['pad', v => [0.45, 0.3, 0.15].includes(v)], ['fade', v => typeof v === 'boolean'], ['hand', v => v === 'left' || v === 'right']]) if (!ok(game.opts[k])) game.opts[k] = OPT_DEF[k];
+  function saveOpts() { localStorage.setItem(OPTS_KEY, JSON.stringify(game.opts)); }
+  function applyOpts() { const o = game.opts; TBX.TB.typeMs = o.speed; document.documentElement.style.setProperty('--pad-a', o.pad); document.body.classList.toggle('lefty', o.hand === 'left'); if (!o.fade) pads.classList.remove('idle'); }
   function startBattle(b, restore) {
-    game.held = []; game.mode = 'battle'; game.battleBum = b;
+    game.held = []; game.mode = 'battle'; game.battleBum = b; if (!restore) Rules.sawEnemy(game.s.char, 'bumblet');
     game.battle = new BM.Battle(game, 'bumblet', (bt, res) => {
       game.mode = 'field'; game.lastLog = game.battle && game.battle.log; game.battle = null;
       if (bt.over === 'lose') { const pk = game.s.pack, nm = id => Rules.ITEMS[id].name;
@@ -989,7 +1405,7 @@ body.portrait .round .vis{font-size:22px}
       if (bt.over === 'win') { b.alive = false; b.respawnAt = game.s.time + RESPAWN_MS; }
       else if (bt.over === 'lose') { // death-penalty spec: one pack at a time, dropped where you fell; wake at the inn
         game.s.pack = res && res.dropped ? { map: game.s.map, x: game.pl.x, y: game.pl.y, id: res.dropped.id, qty: res.dropped.qty } : null;
-        game.s.map = 'town'; Object.assign(game.pl, { x: 5, y: 6, dir: 'up', move: null }); }
+        game.s.map = 'inn'; Object.assign(game.pl, { x: maps.inn.bed.x, y: maps.inn.bed.y, dir: 'down', move: null }); } // D12: wake on the inn bed
       else if (bt.over) b.wait = 2500;
       save();
     } });
@@ -1009,21 +1425,35 @@ body.portrait .round .vis{font-size:22px}
     }
   }
   function updateField(dt) {
-    game.s.time += dt; const p = game.pl;
+    const p = game.pl; if (!menuOpen()) game.s.time += dt; // §2.2: the menu pauses world time
     if (game.fade) { const f = game.fade; f.t += dt; if (!f.midDone && f.t >= f.dur / 2) { f.midDone = 1; f.mid(); } if (f.t >= f.dur) { game.fade = null; f.done && f.done(); } return; }
-    if (top()) { top().update && top().update(dt); return; }
-    if (p.move) { p.move.t += dt; p.walkT += dt; if (p.move.t >= STEP_MS) { p.move = null; save(); arrive(); } } // QA #5: autosave every step
+    if (top()) { top().update && top().update(dt); return; } // any overlay (and the full-screen menu) freezes the world
+    if (p.move) { p.move.t += dt; p.walkT += dt; if (p.move.t >= STEP_MS) { p.move = null; save(); arrive(); if (game.menuQueued) { game.menuQueued = false; if (!top() && !game.fade && game.mode === 'field') { game.held = []; return void openMenu(); } } } } // QA #5: autosave every step
     if (!p.move && !game.fade && !top() && game.mode === 'field' && game.held.length) tryStep(game.held[game.held.length - 1]);
     if (!p.move && game.held.length && p.blocked) p.walkT += dt;
     updateBums(dt);
   }
   const lerpPos = (o, ms) => o.move ? [(o.move.fx + (o.x - o.move.fx) * Math.min(1, o.move.t / ms)) * TS, (o.move.fy + (o.y - o.move.fy) * Math.min(1, o.move.t / ms)) * TS] : [o.x * TS, o.y * TS];
+  // art-pass §4.5 / §9.5: town = golden hour (#ffc888 @ .22) + a light pool on the square + vignette; rooms per §7; overworld = day.
+  const LIGHT = { overworld: ['255,224,168', .12, 0], town: ['255,200,136', .22, .25], inn: ['255,216,160', .12, .25], shop: ['255,216,160', .12, .25], forge: ['255,176,112', .15, .35] };
+  function ambient(m, camX, camY) { const [rgb, a, vig] = LIGHT[m.id] || LIGHT.overworld;
+    ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = `rgba(${rgb},${a})`; ctx.fillRect(0, 0, W, H);
+    if (m.id === 'town') { const cx = 12.5 * TS - camX, cy = 7 * TS - camY, g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 120); g.addColorStop(0, 'rgba(255,224,168,.10)'); g.addColorStop(1, 'rgba(255,224,168,0)');
+      ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+    ctx.globalCompositeOperation = 'source-over';
+    if (vig) { const r = Math.hypot(W, H) / 2, g = ctx.createRadialGradient(W / 2, H / 2, r * .6, W / 2, H / 2, r); g.addColorStop(0, 'rgba(28,16,32,0)'); g.addColorStop(1, `rgba(28,16,32,${vig})`); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); } }
+  game.LIGHT = LIGHT;
+  // art-pass §5.3 / §9.6: 4 frames (contact L, pass, contact R, pass) x 60 ms = one 240 ms tile step.
+  const WALK_MS = 60, walkFrame = t => [1, 0, 3, 0][(t / WALK_MS | 0) % 4]; game.walkFrame = walkFrame;
   function drawField(now) {
-    const m = map(), p = game.pl, [ppx, ppy] = lerpPos(p, STEP_MS), camX = Math.round(ppx + 8 - W / 2), camY = Math.round(ppy + 8 - H / 2);
+    const m = map(), p = game.pl, [ppx, ppy] = lerpPos(p, STEP_MS), fit = m.interior && m.W * TS <= W && m.H * TS + 16 <= H, camX = fit ? Math.round((m.W * TS - W) / 2) : Math.round(ppx + 8 - W / 2), camY = fit ? Math.round((m.H * TS - H) / 2) - 8 : Math.round(ppy + 8 - H / 2);
+    if (m.interior) { ctx.fillStyle = '#07060f'; ctx.fillRect(0, 0, W, H); }
     const x0 = Math.floor(camX / TS) - 1, y0 = Math.floor(camY / TS) - 1, x1 = x0 + W / TS + 3, y1 = y0 + Math.ceil(H / TS) + 3;
-    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) Art.ground(ctx, m, x, y, x * TS - camX, y * TS - camY, now, World);
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (m.interior) Art.room(ctx, m, x, y, x * TS - camX, y * TS - camY); else Art.ground(ctx, m, x, y, x * TS - camX, y * TS - camY, now, World);
     const list = [];
     for (let y = y0; y < y1 + 2; y++) for (let x = x0; x < x1; x++) { const t = World.tileAt(m, x, y), sx = x * TS - camX, sy = y * TS - camY, hv = G.hash(x, y);
+      if (m.interior) { if ('KZHAFY'.includes(t)) list.push([sy + (t === 'Z' ? 1 : 16), () => { ctx.drawImage(Art.furniture(t), sx - 1, sy - 10); if (t === 'F') { ctx.drawImage(Art.fire((now / 100 | 0) % 4), sx + 2, sy + 0);
+          const gl = ctx.createRadialGradient(sx + 8, sy + 8, 0, sx + 8, sy + 8, 40); gl.addColorStop(0, 'rgba(255,210,122,.45)'); gl.addColorStop(1, 'rgba(255,210,122,0)'); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = gl; ctx.fillRect(sx - 32, sy - 32, 80, 80); ctx.globalCompositeOperation = 'source-over'; } }]); continue; }
       if (t === 'f') list.push([sy + 16, () => ctx.drawImage(Art.tree(((now / 600 | 0) + x) % 2 && hv % 3 === 0 ? 1 : 0), sx - 1, sy - 5 - (y % 2 ? 0 : 0))]);
       else if (t === 'h') list.push([sy + 12, () => ctx.drawImage(Art.hill(), sx - 1, sy + 3)]);
       else if (t === 'M') list.push([sy + 16, () => ctx.drawImage(Art.mountain(hv % 2), sx - 1, sy - 9)]);
@@ -1040,93 +1470,117 @@ body.portrait .round .vis{font-size:22px}
       list.push([sy + 15, () => { Art.shadow(ctx, sx + 8, sy + 13, 10, 3); ctx.fillStyle = '#5c352e'; ctx.fillRect(sx + 3, sy + 5 - bob, 10, 8); ctx.fillStyle = '#a16948'; ctx.fillRect(sx + 4, sy + 4 - bob, 8, 7); ctx.fillStyle = '#ca9660'; ctx.fillRect(sx + 4, sy + 4 - bob, 8, 2); ctx.fillStyle = '#f4cc5c'; ctx.fillRect(sx + 7, sy - 4 - bob, 2, 5); ctx.fillRect(sx + 6, sy - 5 - bob, 4, 2); const pl = game.pl; if (Math.abs(pl.x - pk.x) + Math.abs(pl.y - pk.y) <= 3) G.text(ctx, T('m1.pack.marker'), sx + 8, sy - 14 - bob, '#ffd878', 'center', '#000'); }]); } }
     if (game.s.map === 'overworld') for (const b of game.bums) if (b.alive) { const [bx, by] = lerpPos(b, BUM_STEP_MS), o = Bumblet.overworld(!!b.move, now), sx = bx - camX, sy = by - camY;
       list.push([sy + 16, () => { Art.shadow(ctx, sx + 8, sy + 15, o.apex ? 6 : 10, o.apex ? 2 : 3); ctx.drawImage(o.c, sx - 1, sy - 5); }]); }
-    const walking = p.move || (p.blocked && game.held.length), fr = walking ? [0, 1, 0, 3][(p.walkT / (p.move ? 120 : 150) | 0) % 4] : 0, c = game.s.char;
-    actor(c.race, c.body, p.dir, fr, ppx - camX, ppy - camY - (!walking && (now / 500 | 0) % 2 ? 1 : 0));
+    const walking = p.move || (p.blocked && game.held.length), fr = walking ? walkFrame(p.walkT) : 0, c = game.s.char;
+    actor(c.race, c.body, p.dir, fr, ppx - camX, ppy - camY - (!walking && (now / 500 | 0) % 2 ? 1 : 0) + (fr % 2 ? 1 : 0)); // contact frames: the body drops 1 px
     list.sort((a, b) => a[0] - b[0]).forEach(d => d[1]());
     if (c.hp <= 3 && game.s.map === 'overworld') { const wx = ppx - camX + 8, wy = ppy - camY - 18; ctx.fillStyle = '#1c1020'; ctx.fillRect(wx - 3, wy - 1, 7, 11); ctx.fillStyle = '#ff6a5a'; ctx.fillRect(wx - 2, wy, 5, 9); ctx.fillStyle = '#fff6dc'; ctx.fillRect(wx, wy + 1, 1, 4); ctx.fillRect(wx, wy + 7, 1, 1); }
     // ambient day tint
-    ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = 'rgba(255,224,168,.12)'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over';
+    if (!game.flat) ambient(m, camX, camY); // game.flat: palette check (art-pass §8 colour budget)
     // HUD
     TBX.frame(ctx, 4, 4, 92, 40); G.text(ctx, c.name, 10, 9, '#ffd878'); G.text(ctx, 'HP', 10, 20, '#f0ecdc'); G.text(ctx, c.hp + '/' + c.maxHp, 90, 20, c.hp < c.maxHp * .25 ? '#ff6a5a' : '#ffd878', 'right'); G.text(ctx, Rules.fmtMoney(c.coin), 90, 31, '#ffd878', 'right'); G.text(ctx, 'Herb ' + c.herbs, 10, 31, '#f0ecdc');
     G.text(ctx, m.name, W - 8, 8, '#f0ecdc', 'right');
-    for (const o of game.ov) if (!(game.domMenu && o.items)) o.draw(ctx, now); // portrait: menus live in #mgrid
+    for (const o of game.ov) o.draw(ctx, now);
     if (game.fade) { const f = game.fade, a = 1 - Math.abs(f.t / (f.dur / 2) - 1); ctx.fillStyle = `rgba(7,6,15,${Math.min(1, a * 1.2)})`; ctx.fillRect(0, 0, W, H); }
   }
-
-  // ---------- portrait menu panel (QA 3e4a3ff blocker) ----------
-  // Portrait draws the canvas at ~1x (width-bound), so 28-native menu rows are 28 CSS px with ~7px text. There the top menu
-  // renders as an HTML panel above the field instead (>=44px cells, 16px text); the canvas menus are hidden. Landscape is unchanged.
-  const mdom = document.createElement('div'); mdom.id = 'mgrid'; document.body.appendChild(mdom); let mdomKey = '';
-  const esc = v => String(v).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
-  const val = v => typeof v === 'function' ? v() : v;
-  function syncMenuDom() {
-    const m = document.body.classList.contains('portrait') && game.mode === 'field' && game.s ? game.ov.filter(o => o.items).pop() || null : null; game.domMenu = m;
-    if (!m) { if (mdomKey) { mdom.style.display = 'none'; mdom.innerHTML = ''; mdomKey = ''; } return; }
-    const cells = m.items.map(it => [it.label, it.right ? val(it.right) : '', !!val(it.locked), it.tag || '']), key = JSON.stringify([val(m.title), m.sel, m.cols, cells]);
-    if (key === mdomKey) return; mdomKey = key;
-    mdom.innerHTML = (val(m.title) ? `<div class="mg-title">${esc(val(m.title))}</div>` : '') + `<div class="mg-grid" style="grid-template-columns:repeat(${m.cols},1fr)">` +
-      cells.map(([l, r, lk, tag], i) => `<button class="mg-cell${i === m.sel ? ' on' : ''}${lk ? ' locked' : ''}" data-i="${i}"><span class="mg-l">${esc(l)}</span>${r || (lk && tag) ? `<span class="mg-r">${esc(r)}${lk && tag ? `<span class="mg-tag">${esc(tag)}</span>` : ''}</span>` : ''}</button>`).join('') + '</div>';
-    mdom.style.display = 'block'; mdom.style.maxHeight = Math.max(120, cv.getBoundingClientRect().top - mdom.getBoundingClientRect().top - 8) + 'px';
-  }
-  mdom.addEventListener('pointerdown', e => { e.preventDefault(); pokePads(); const o = top(); if (!o) return; if (o instanceof TBX.Dialog) { o.advance(); return; }
-    const b = e.target.closest('.mg-cell'); if (b && o === game.domMenu) { const i = +b.dataset.i; o.sel = i; o.items[i].act(); } });
 
   // ---------- input ----------
   const DIRS = ['up', 'down', 'left', 'right'];
   function press(b) {
-    pokePads();
+    if (game.paused) return; pokePads();
     if (game.mode === 'creator') { if (!game.kbd) creatorButton(b); return; }
     if (game.mode === 'battle') return game.battle && game.battle.button(b);
     if (game.fade) return;
-    const o = top(); if (o) { if (o instanceof TBX.Dialog) { if (b === 'A' || b === 'B') o.advance(); } else o.button(b); return; }
-    if (DIRS.includes(b)) { if (!game.pl.move) tryStep(b); } else if (b === 'A') talkFacing(); else if (b === 'B') fieldMenu();
+    if (b === 'M') return menuButton();
+    const o = top(); if (o) { if (o instanceof TBX.Dialog) { if (b === 'A' || b === 'B') o.advance(); } else if (o.full || (b !== 'Q' && b !== 'E')) o.button(b); return; }
+    if (DIRS.includes(b)) { if (!game.pl.move) tryStep(b); } else if (b === 'A') talkFacing(); else if (b === 'B') openMenu();
   }
   function hold(b) { if (DIRS.includes(b)) { game.held = game.held.filter(x => x !== b); game.held.push(b); } press(b); }
   function release(b) { game.held = game.held.filter(x => x !== b); }
   function tap(x, y) {
-    pokePads();
+    if (game.paused) return; pokePads();
     if (game.mode === 'creator') { if (!game.kbd) creatorTap(x, y); return; }
     if (game.mode === 'battle') return game.battle && game.battle.tap(x, y);
-    const o = top(); if (!o) return; if (o instanceof TBX.Dialog) o.advance(); else if (game.domMenu === o) o.onCancel(); /* portrait: canvas menu is hidden, a field tap is outside it */ else if (!o.tap(x, y) && !(x >= o.x && x < o.x + o.w && y >= o.y && y < o.y + o.h)) o.onCancel();
+    const o = top(); if (!o) return; if (o instanceof TBX.Dialog) o.advance(); else if (!o.tap(x, y) && !(x >= o.x && x < o.x + o.w && y >= o.y && y < o.y + o.h)) o.onCancel();
   }
-  const KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', z: 'A', Enter: 'A', ' ': 'A', x: 'B', Escape: 'B' };
+  const KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', z: 'A', Enter: 'A', ' ': 'A', x: 'B', X: 'B', Escape: 'M', m: 'M', M: 'M', q: 'Q', Q: 'Q', e: 'E', E: 'E', PageUp: 'Q', PageDown: 'E' };
   window.addEventListener('keydown', e => { const b = KEYS[e.key]; if (!b) return; e.preventDefault(); if (!e.repeat) hold(b); });
   window.addEventListener('keyup', e => { const b = KEYS[e.key]; if (b) release(b); });
-  const ptr = new Map();
-  document.querySelectorAll('[data-btn]').forEach(el => {
-    el.addEventListener('pointerdown', e => { e.preventDefault(); const b = el.dataset.btn; ptr.set(e.pointerId, b); el.classList.add('on'); hold(b); });
-  });
-  const up = e => { const b = ptr.get(e.pointerId); if (!b) return; ptr.delete(e.pointerId); release(b); document.querySelectorAll(`[data-btn="${b}"]`).forEach(el => el.classList.remove('on')); };
+  // A/B/Menu: one pointer each. The d-pad is one 144x144 box with pointer capture, so a thumb can slide between arms (spec §1.4).
+  const ptr = new Map(), lit = (b, on) => document.querySelectorAll(`[data-btn="${b}"]`).forEach(el => el.classList.toggle('on', on));
+  document.querySelectorAll('.hit[data-btn]').forEach(el => el.addEventListener('pointerdown', e => { e.preventDefault(); document.body.classList.remove('keys'); const b = el.dataset.btn; ptr.set(e.pointerId, b); lit(b, true); if (b === 'M') { pokePads(); if (!game.paused) press('M'); } else hold(b); }));
+  const dpad = document.getElementById('dpad'), armAt = e => { const r = dpad.getBoundingClientRect(), c = Math.floor((e.clientX - r.left) / 48), w = Math.floor((e.clientY - r.top) / 48); return c === 1 && w === 0 ? 'up' : c === 1 && w === 2 ? 'down' : c === 0 && w === 1 ? 'left' : c === 2 && w === 1 ? 'right' : null; };
+  const dpadSet = (id, b) => { const o = ptr.get(id); if (o === b) return; if (o) { release(o); lit(o, false); } if (b) { ptr.set(id, b); lit(b, true); hold(b); } else ptr.set(id, null); };
+  dpad.addEventListener('pointerdown', e => { e.preventDefault(); document.body.classList.remove('keys'); try { dpad.setPointerCapture(e.pointerId); } catch (_) {} ptr.set(e.pointerId, null); dpadSet(e.pointerId, armAt(e)); });
+  dpad.addEventListener('pointermove', e => { if (ptr.has(e.pointerId)) dpadSet(e.pointerId, armAt(e)); });
+  const up = e => { if (!ptr.has(e.pointerId)) return; const b = ptr.get(e.pointerId); ptr.delete(e.pointerId); if (b) { if (b !== 'M') release(b); lit(b, false); } };
   window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
-  cv.addEventListener('pointerdown', e => { e.preventDefault(); const r = cv.getBoundingClientRect(); tap((e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H); });
+  window.addEventListener('keydown', () => document.body.classList.add('keys'), true); // pads hide while a keyboard is used; the next touch brings them back
+  window.addEventListener('pointerdown', e => { if (e.pointerType !== 'mouse') document.body.classList.remove('keys'); }, true); // any touch, anywhere, brings the pads back
+  let swipe0 = null; // tab-strip swipe (§2.2)
+  cv.addEventListener('pointerup', e => { const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W, m = menuOpen(); if (swipe0 && m) { if (Math.abs(x - swipe0.x) >= 24) m.swipe(x - swipe0.x); else tap(swipe0.x, swipe0.y); } swipe0 = null; }); // a tab tap acts on release, so a drag can be a swipe
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); const r = cv.getBoundingClientRect(), ny = (e.clientY - r.top) / r.height * H; swipe0 = ny < 32 && menuOpen() ? { x: (e.clientX - r.left) / r.width * W, y: ny } : null; if (swipe0) return; tap((e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H); });
   let padTimer; const pads = document.getElementById('pads');
-  function pokePads() { pads.classList.remove('idle'); clearTimeout(padTimer); padTimer = setTimeout(() => pads.classList.add('idle'), 4000); }
+  function pokePads() { pads.classList.remove('idle'); clearTimeout(padTimer); if (game.opts.fade) padTimer = setTimeout(() => pads.classList.add('idle'), 4000); }
+  applyOpts();
 
   // ---------- layout: integer scale in device px (art spec §1) ----------
   // Integer scale in device px inside the safe area (QA #8). Portrait: canvas on top, pads in a deck below (QA #7).
   function insets() { const cs = getComputedStyle(document.documentElement), v = k => parseFloat(cs.getPropertyValue(k)) || 0; return { t: v('--sat'), r: v('--sar'), b: v('--sab'), l: v('--sal') }; }
   function layout() {
-    const dpr = window.devicePixelRatio || 1, kbd = document.body.classList.contains('kbd'), ins = insets(), portrait = innerHeight > innerWidth && !kbd;
-    document.body.classList.toggle('portrait', portrait);
-    const pads = document.getElementById('pads'), st = document.getElementById('stage');
-    if (portrait && pads.parentNode !== document.body) document.body.appendChild(pads); else if (!portrait && pads.parentNode !== st) st.appendChild(pads);
-    const aw = innerWidth - ins.l - ins.r, ah = kbd ? innerHeight * 0.55 - ins.t : portrait ? innerHeight - ins.t - ins.b - 248 : innerHeight - ins.t - ins.b;
+    const dpr = window.devicePixelRatio || 1, kbd = document.body.classList.contains('kbd'), ins = insets();
+    // Landscape only (spec §1.5): a phone in portrait shows the rotate card and pauses; the name keyboard and >= 768 CSS wide screens are exempt.
+    const rotate = innerHeight > innerWidth && !kbd && innerWidth < 768; document.body.classList.toggle('rotate', rotate); updatePause();
+    const st = document.getElementById('stage'), aw = innerWidth - ins.l - ins.r, ah = kbd ? innerHeight * 0.55 - ins.t : innerHeight - ins.t - ins.b;
     let n = Math.floor(Math.min(aw * dpr / W, ah * dpr / H)), s = n >= 1 ? n / dpr : Math.min(aw / W, ah / H);
-    st.style.transform = `scale(${s})`; st.style.left = Math.round(ins.l + (aw - W * s) / 2) + 'px';
-    // Portrait (QA f25313a #4): the field sits right on top of the control deck (8px gap) so there's no dead band between them.
-    st.style.top = Math.round(portrait ? Math.max(ins.t + 8, innerHeight - ins.b - 248 - H * s) : ins.t + (ah - H * s) / 2) + 'px';
+    st.style.transform = `scale(${s})`; st.style.left = Math.round(ins.l + (aw - W * s) / 2) + 'px'; st.style.top = Math.round(ins.t + (ah - H * s) / 2) + 'px';
     game.scale = s;
-    mdomKey = ''; // re-fit the portrait menu panel
   }
-  window.addEventListener('resize', layout); layout();
+  // Paused while the rotate card, the Play card or the "return to full screen" state is up (spec §1.1, §1.5).
+  function updatePause() { const b = document.body.classList; game.paused = b.contains('rotate') || b.contains('play') || !!game.fsLost; }
+
+  // ---------- full screen (spec §1.1-1.2) ----------
+  const FS_KEY = 'hearthwood.fs', A2HS_KEY = 'hearthwood.a2hs', playEl = document.getElementById('play');
+  const standalone = () => matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone === true;
+  const fsApi = () => !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const touchDev = () => navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
+  let fsAskedThisLoad = false;
+  function requestFs() { // must run inside a user gesture; any rejection = carry on windowed (never retried without a new tap)
+    const el = document.documentElement, rq = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen ? el.webkitRequestFullscreen() : null;
+    return Promise.resolve(rq).then(() => { try { const l = screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'); if (l && l.catch) l.catch(() => {}); } catch (_) {} return true; }, () => false); }
+  function closePlay() { document.body.classList.remove('play'); updatePause(); }
+  function showPlay(ios) { document.body.classList.add('play'); updatePause();
+    playEl.innerHTML = ios ? '<div style="font-weight:bold;font-size:18px;color:#ffd878">Add to Home Screen for full screen</div><ol><li>Tap Share</li><li>Tap Add to Home Screen</li><li>Open Hearthwood from the icon</li></ol><button class="link" data-act="browser">Play in the browser</button>'
+      : '<button data-act="fs">Tap to play full screen</button><button class="link" data-act="browser">Play in the browser</button>';
+    playEl.onclick = e => { const b = e.target.closest('[data-act]'); if (!b) return; if (b.dataset.act === 'fs') { localStorage.setItem(FS_KEY, 'on'); fsAskedThisLoad = true; requestFs(); } else localStorage.setItem(FS_KEY, 'off'); closePlay(); }; }
+  function initFs() {
+    if (standalone()) return; const fs = localStorage.getItem(FS_KEY);
+    if (!fsApi()) { const n = +(localStorage.getItem(A2HS_KEY) || 0); if (touchDev() && !fs && n < 3) { localStorage.setItem(A2HS_KEY, n + 1); showPlay(true); } return; } // iPhone: shown on the first 3 loads max
+    if (!fs && touchDev() && !isFs()) return showPlay(false);
+    if (fs === 'on') window.addEventListener('pointerdown', function again() { window.removeEventListener('pointerdown', again, true); if (!isFs() && !fsAskedThisLoad) { fsAskedThisLoad = true; requestFs(); } }, true); // browsers drop full screen on reload
+  }
+  let wasFs = false; const toastEl = document.body;
+  document.addEventListener('fullscreenchange', () => { const now = isFs(); if (wasFs && !now) { game.fsLost = true; updatePause(); toastEl.classList.add('toast'); setTimeout(() => toastEl.classList.remove('toast'), 3000); } wasFs = now; });
+  window.addEventListener('pointerdown', () => { if (!game.fsLost) return; game.fsLost = false; toastEl.classList.remove('toast'); updatePause(); requestFs(); }, true);
+  game.fs = { requestFs, showPlay, standalone, fsApi }; initFs();
+  window.addEventListener('resize', layout); window.addEventListener('orientationchange', layout); layout();
   const flush = () => { if (game.s) save(); }; window.addEventListener('pagehide', flush); document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
 
+  // ---------- gamepad (spec A §2.2): A/B, Start = menu, LB/RB = tabs, d-pad or stick. Pads hide while a gamepad is used. ----------
+  const GP = { 0: 'A', 1: 'B', 9: 'M', 4: 'Q', 5: 'E', 12: 'up', 13: 'down', 14: 'left', 15: 'right' }, gpHeld = new Set();
+  function pollPad() { const gps = navigator.getGamepads ? navigator.getGamepads() : []; const now = new Set();
+    for (const gp of gps) { if (!gp) continue; for (const [i, b] of Object.entries(GP)) if (gp.buttons[i] && gp.buttons[i].pressed) now.add(b);
+      const [ax, ay] = [gp.axes[0] || 0, gp.axes[1] || 0]; if (ax < -0.5) now.add('left'); else if (ax > 0.5) now.add('right'); if (ay < -0.5) now.add('up'); else if (ay > 0.5) now.add('down'); }
+    for (const b of now) if (!gpHeld.has(b)) { document.body.classList.add('keys'); if (DIRS.includes(b)) hold(b); else press(b); }
+    for (const b of gpHeld) if (!now.has(b) && DIRS.includes(b)) release(b); gpHeld.clear(); now.forEach(b => gpHeld.add(b)); }
   // ---------- loop ----------
   let last = performance.now();
   function frame(t) {
-    const dt = Math.min(100, t - last); last = t; game.now = t;
+    const dt = Math.min(100, t - last); last = t; game.now = t; pollPad();
+    // Rotate card up: the world pauses after the step in progress (spec §4); battles pause at once.
+    if (game.paused) { if (game.mode === 'field' && game.pl.move) updateField(dt); if (game.mode === 'creator') drawCreator(t); else if (game.mode === 'battle') game.battle.draw(ctx, t); else drawField(t); requestAnimationFrame(frame); return; }
+    if (game.s && game.mode !== 'creator') game.s.char.playMs = (game.s.char.playMs || 0) + dt; // Status: Play time
     if (game.mode === 'field') updateField(dt); else if (game.mode === 'battle') { game.s.time += dt; game.battle.update(dt); }
-    syncMenuDom();
     if (game.mode === 'creator') drawCreator(t); else if (game.mode === 'battle') game.battle.draw(ctx, t); else drawField(t);
     requestAnimationFrame(frame);
   }
@@ -1134,7 +1588,7 @@ body.portrait .round .vis{font-size:22px}
   try { load(); } catch (e) { Rules.rotateBackup(localStorage, SAVE_KEY, localStorage.getItem(SAVE_KEY)); game.loadError = String(e); game.s = null; game.mode = 'creator'; }
   pokePads(); requestAnimationFrame(frame);
   // Test hook (read-mostly): e2e drives real input; this exposes state and a rules-RNG seed.
-  root.__hw = { game, maps, Rules, World, save, load, SAVE_KEY, seed: n => { game.rng = Rules.mulberry32(n); }, busy: () => !!(game.pl.move || game.fade || game.ov.length || game.mode !== 'field') };
+  root.__hw = { game, maps, Rules, FullMenu: FM, World, save, load, SAVE_KEY, seed: n => { game.rng = Rules.mulberry32(n); }, busy: () => !!(game.pl.move || game.fade || game.ov.length || game.mode !== 'field') };
 })(this);
 
 </script>
