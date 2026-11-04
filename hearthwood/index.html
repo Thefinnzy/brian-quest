@@ -34,6 +34,15 @@ body.portrait [data-btn=B]{left:auto!important;right:116px!important;top:120px!i
 body.portrait #pads .vis{left:4px!important;top:4px!important;width:calc(100% - 8px)!important;height:calc(100% - 8px)!important}
 body.portrait #pads .vis svg{width:20px;height:20px}
 body.portrait .round .vis{font-size:22px}
+/* portrait (QA 3e4a3ff blocker): the 384px canvas can't scale past ~1x at 390 wide, so field menus render as this HTML panel in the space above the field: >=44px cells, 16px text */
+#mgrid{display:none;position:fixed;left:calc(var(--sal) + 8px);right:calc(var(--sar) + 8px);top:calc(var(--sat) + 8px);box-sizing:border-box;overflow:auto;background:linear-gradient(#2c3478,#1e2458 38%,#12163a);border:3px solid #f6eed6;box-shadow:0 0 0 1px #120a18,inset 0 0 0 1px #7484e0;border-radius:6px;padding:8px;font:bold 16px monospace;color:#f0ecdc;touch-action:none}
+.mg-title{color:#ffd878;margin:0 4px 8px}
+.mg-grid{display:grid;gap:4px}
+.mg-cell{min-height:52px;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:4px 10px;border:1px solid #7484e0;border-radius:4px;background:#12163a;color:#f0ecdc;font:inherit;text-align:left}
+.mg-r{align-self:flex-end;color:#ffd878;font-size:15px}
+.mg-cell.locked,.mg-cell.locked .mg-r{color:#8a86a8}
+.mg-cell.on,.mg-cell.on .mg-r{background:#f4cc5c;color:#1c1020}
+.mg-tag{border:1px solid currentColor;padding:0 3px;margin-left:6px;font-size:13px}
 #namegrid{padding-bottom:var(--sab);padding-left:var(--sal);padding-right:var(--sar)}
 </style></head><body>
 <div id="stage"><canvas id="cv" width="384" height="216"></canvas>
@@ -287,6 +296,8 @@ body.portrait .round .vis{font-size:22px}
   function pickupPack(ch, pack) { const took = addStack(ch, pack.id, pack.qty), left = pack.qty - took; return { took, pack: left > 0 ? { ...pack, qty: left } : null }; }
   // §1 Repair at Hal: 1c per pip, weapon first, partial if short, never debt.
   const REPAIR_PER_PIP = 1;
+  // QA 8b61df2 minor 1: a repair that takes you from >= the inn price to below it while HP is low (under half) and no free rest is waiting strands you.
+  const repairWarn = ch => { const spend = Math.min(repairCost(ch), Math.floor(ch.coin / REPAIR_PER_PIP) * REPAIR_PER_PIP); return spend > 0 && ch.coin >= INN_PRICE && ch.coin - spend < INN_PRICE && ch.hp < ch.maxHp / 2 && !ch.pityRest; };
   const repairCost = ch => ['weapon', 'armor'].reduce((a, s) => a + (ch.dur ? MAX_PIPS - ch.dur[s] : 0), 0) * REPAIR_PER_PIP;
   function repair(ch) { let pips = 0; for (const s of ['weapon', 'armor']) while (ch.dur && ch.dur[s] < MAX_PIPS && ch.coin >= REPAIR_PER_PIP) { ch.dur[s]++; ch.coin -= REPAIR_PER_PIP; pips++; }
     return { pips, cost: pips * REPAIR_PER_PIP, ok: pips > 0 }; }
@@ -340,7 +351,8 @@ body.portrait .round .vis{font-size:22px}
       if (c.maxHp <= 0) return { ok: false, error: 'char.maxHp <= 0' }; if (c.hp <= 0) return { ok: false, error: 'char.hp <= 0' };
       if (o.battle != null) { const e = validBattle(o.battle); if (e) return { ok: false, error: 'bad battle: ' + e }; }
       if (!ITEMS[c.weapon]) c.weapon = 'club'; if (!ITEMS[c.armor]) c.armor = 'clothes';
-      if (!Array.isArray(c.bag)) c.bag = []; c.bag = c.bag.filter(s => s && ITEMS[s.id] && num(s.qty) && s.qty > 0).map(s => ({ ...s, qty: Math.min(BAG.stackMax, Math.floor(s.qty)) })); // QA f25313a #3 + bag §5: clamp to 99
+      if (!Array.isArray(c.bag)) c.bag = []; { const mg = new Map(); for (const s of c.bag.filter(s => s && ITEMS[s.id] && num(s.qty) && s.qty > 0)) { const q = Math.floor(s.qty), m = mg.get(s.id); if (m) m.qty = Math.min(BAG.stackMax, m.qty + q); else mg.set(s.id, { ...s, qty: Math.min(BAG.stackMax, q) }); }
+        c.bag = [...mg.values()]; } // QA f25313a #3 + bag §5: clamp to 99; QA 8b61df2 minor 2: duplicate ids merge into one stack (first slot kept), overflow past 99 dropped like the clamp
       c.herbs = Math.max(0, Math.min(BAG.stackMax, Math.floor(c.herbs))); c.bag = c.bag.slice(0, BAG.slots - (c.herbs > 0 ? 1 : 0)); // keep the first 20 slots
       if (!c.dur || !num(c.dur.weapon) || !num(c.dur.armor)) c.dur = { weapon: MAX_PIPS, armor: MAX_PIPS }; // old saves: new gear
       c.dur.weapon = Math.max(0, Math.min(MAX_PIPS, c.dur.weapon | 0)); c.dur.armor = Math.max(0, Math.min(MAX_PIPS, c.dur.armor | 0));
@@ -355,7 +367,7 @@ body.portrait .round .vis{font-size:22px}
     } catch (e) { return { ok: false, error: String(e.message || e) }; }
   }
 
-  const Rules = { FLAGS, LV2_XP, checkLevel, spendPoint, Combat, RACES, STATS, ITEMS, ENEMIES, DROPS, rollDrops, INN_PRICE, innPrice, pityNow, START_COIN, START_HERBS, MAX_ROUNDS, SAVE_VERSION, mulberry32, toGSC, fromGSC, fmtMoney, parseMoney, newChar, derive, meetsReq, dodgeChance, hitChance, newBattle, aiChoose, refuse, battleRound, settleBattle, DEATH, BAG, slotsUsed, roomFor, MAX_PIPS, wearPenalty, gearBonus, addStack, pickDropStack, pickupPack, repair, repairCost, REPAIR_PER_PIP, deathPenalty, buy, lootValue, sellLoot, rest, declineInn, serialize, deserialize, parseSave, rotateBackup, bakKey, BAK_KEEP };
+  const Rules = { FLAGS, LV2_XP, checkLevel, spendPoint, Combat, RACES, STATS, ITEMS, ENEMIES, DROPS, rollDrops, INN_PRICE, innPrice, pityNow, START_COIN, START_HERBS, MAX_ROUNDS, SAVE_VERSION, mulberry32, toGSC, fromGSC, fmtMoney, parseMoney, newChar, derive, meetsReq, dodgeChance, hitChance, newBattle, aiChoose, refuse, battleRound, settleBattle, DEATH, BAG, slotsUsed, roomFor, MAX_PIPS, wearPenalty, gearBonus, addStack, pickDropStack, pickupPack, repair, repairCost, repairWarn, REPAIR_PER_PIP, deathPenalty, buy, lootValue, sellLoot, rest, declineInn, serialize, deserialize, parseSave, rotateBackup, bakKey, BAK_KEEP };
   if (typeof module !== 'undefined') module.exports = Rules; else root.Rules = Rules;
 })(this);
 
@@ -645,7 +657,7 @@ body.portrait .round .vis{font-size:22px}
     pad: 8, lineH: 12, lines: 4, typeMs: 30,
     fill: ['#2c3478', '#1e2458', '#12163a'], fillStops: [0, 0.38, 1],
     frame: '#f6eed6', outer: '#120a18', inner: '#7484e0',
-    text: '#f0ecdc', head: '#ffd878', dim: '#8a8aa8', sel: '#f4cc5c', selText: '#1c1020', arrowMs: 400,
+    text: '#f0ecdc', head: '#ffd878', dim: '#8a8aa8', locked: '#8a86a8', /* gated shop item: name + price dimmed (art) */ sel: '#f4cc5c', selText: '#1c1020', arrowMs: 400,
     menuRowH: 28,
   };
   // Window style (art spec §6): navy gradient, 2px cream frame, 1px dark outside, 1px periwinkle inner ring, cut corners.
@@ -668,20 +680,34 @@ body.portrait .round .vis{font-size:22px}
     if (this.typed() && (now / TB.arrowMs | 0) % 2) { ctx.fillStyle = TB.frame; const ax = x + w - 14, ay = y + h - 11; ctx.fillRect(ax, ay, 7, 1); ctx.fillRect(ax + 1, ay + 1, 5, 1); ctx.fillRect(ax + 2, ay + 2, 3, 1); ctx.fillRect(ax + 3, ay + 3, 1, 1); }
   };
   // List menu: items [{label, right, disabled, act}], rows 28 native tall (touch min). onCancel for B.
-  function Menu(opts) { Object.assign(this, { x: 100, y: 12, w: 200, /* clear of the HUD (x 4..96) so the purse stays visible, QA f25313a #4 */ title: '', sel: 0 }, opts); this.h = (this.title ? 18 : 6) + this.items.length * TB.menuRowH + 6; }
-  Menu.prototype.rowY = function (i) { return this.y + (this.title ? 18 : 6) + i * TB.menuRowH; };
-  Menu.prototype.button = function (b) { const n = this.items.length; if (b === 'up') this.sel = (this.sel + n - 1) % n; else if (b === 'down') this.sel = (this.sel + 1) % n; else if (b === 'A') this.items[this.sel].act(); else if (b === 'B' && this.onCancel) this.onCancel(); };
-  Menu.prototype.tap = function (px, py) { for (let i = 0; i < this.items.length; i++) { const ry = this.rowY(i); if (px >= this.x && px < this.x + this.w && py >= ry && py < ry + TB.menuRowH) { this.sel = i; this.items[i].act(); return true; } } return false; };
+  // cols > 1 lays items out row-major in a grid; each cell shows the label with its right text on a second line, so a
+  // long menu (the shop) stays short enough to sit above the dialogue box (TB.box) instead of under it.
+  function Menu(opts) { Object.assign(this, { x: 100, y: 12, w: 200, /* clear of the HUD (x 4..96) so the purse stays visible, QA f25313a #4 */ title: '', sel: 0, cols: 1 }, opts);
+    this.rows = Math.ceil(this.items.length / this.cols); this.h = (this.title ? 18 : 6) + this.rows * TB.menuRowH + 6; }
+  Menu.prototype.rowY = function (i) { return this.y + (this.title ? 18 : 6) + Math.floor(i / this.cols) * TB.menuRowH; };
+  Menu.prototype.cell = function (i) { const cw = (this.w - 12) / this.cols; return [this.x + 6 + (i % this.cols) * cw, this.rowY(i), cw, TB.menuRowH]; };
+  Menu.prototype.button = function (b) { const n = this.items.length, c = this.cols;
+    if (c > 1 && (b === 'left' || b === 'right')) { const r = this.sel - this.sel % c, k = Math.min(c, n - r); this.sel = r + (this.sel % c + (b === 'left' ? k - 1 : 1)) % k; }
+    else if (b === 'up') this.sel = c > 1 ? (this.sel - c + this.rows * c) % (this.rows * c) : (this.sel + n - 1) % n; else if (b === 'down') this.sel = c > 1 ? (this.sel + c) % (this.rows * c) : (this.sel + 1) % n;
+    else if (b === 'A') this.items[this.sel].act(); else if (b === 'B' && this.onCancel) this.onCancel();
+    if (this.sel >= n) this.sel = n - 1; };
+  Menu.prototype.tap = function (px, py) { for (let i = 0; i < this.items.length; i++) { const [cx, cy, cw, ch] = this.cols > 1 ? this.cell(i) : [this.x, this.rowY(i), this.w, TB.menuRowH]; if (px >= cx && px < cx + cw && py >= cy && py < cy + ch) { this.sel = i; this.items[i].act(); return true; } } return false; };
   Menu.prototype.draw = function (ctx, now) {
     frame(ctx, this.x, this.y, this.w, this.h);
     const title = typeof this.title === 'function' ? this.title() : this.title;
     if (title) G.text(ctx, title, this.x + 10, this.y + 7, TB.head);
     this.items.forEach((it, i) => {
-      const ry = this.rowY(i), on = i === this.sel;
+      const ry = this.rowY(i), on = i === this.sel, col = on ? TB.selText : it.disabled ? TB.dim : TB.text, sh = on ? null : '#1c1020', rt = it.right && (typeof it.right === 'function' ? it.right() : it.right);
+      if (this.cols > 1) { const [cx, cy, cw, ch] = this.cell(i);
+        if (on) { ctx.fillStyle = TB.sel; const l = i % this.cols === 0 ? 0 : 1; ctx.fillRect(cx + l, cy + 1, cw - 1 - l, ch - 2); } // left column: bar at x+6, a 2px gap to the frame's inner ring (x+3)
+        const lk = typeof it.locked === 'function' ? it.locked() : it.locked, ink = on ? TB.selText : lk ? TB.locked : null;
+        G.text(ctx, it.label, cx + 6, cy + 3, ink || col, 'left', sh); let rx = cx + cw - 6;
+        if (lk && it.tag) { const tw = G.textWidth(it.tag) + 4; ctx.fillStyle = ink; ctx.fillRect(rx - tw, cy + 13, tw, 1); ctx.fillRect(rx - tw, cy + 25, tw, 1); ctx.fillRect(rx - tw, cy + 13, 1, 13); ctx.fillRect(rx - 1, cy + 13, 1, 13);
+          G.text(ctx, it.tag, rx - tw + 2, cy + 14, ink, 'left', null); rx -= tw + 4; } // small outlined 'STR 8' tag after the price
+        if (rt) G.text(ctx, rt, rx, cy + 14, ink || TB.head, 'right', sh); return; }
       if (on) { ctx.fillStyle = TB.sel; ctx.fillRect(this.x + 6, ry + 2, this.w - 12, TB.menuRowH - 4); }
-      const col = on ? TB.selText : it.disabled ? TB.dim : TB.text, sh = on ? null : '#1c1020';
       G.text(ctx, it.label, this.x + 14, ry + 9, col, 'left', sh);
-      if (it.right) G.text(ctx, typeof it.right === 'function' ? it.right() : it.right, this.x + this.w - 12, ry + 9, on ? TB.selText : TB.head, 'right', sh);
+      if (rt) G.text(ctx, rt, this.x + this.w - 12, ry + 9, on ? TB.selText : TB.head, 'right', sh);
     });
   };
   root.TextBox = { TB, frame, Dialog, Menu };
@@ -907,26 +933,30 @@ body.portrait .round .vis{font-size:22px}
   function changeMap(id, pos, cb) {
     game.held = []; game.fade = { t: 0, dur: 360, mid: () => { game.s.map = id; Object.assign(game.pl, { x: pos.x, y: pos.y, dir: pos.dir, move: null }); save(); }, done: cb };
   }
+  // PLACEHOLDER for Lore (no approved line fits): Hal's warning before a repair that leaves you short of the inn at low HP.
+  const HAL_WARN = 'That leaves you under ' + Rules.INN_PRICE + 'c, short of a bed at the inn. Repair anyway?';
   function talk(n) {
     const c = game.s.char;
+    const doRepair = () => { const r = Rules.repair(c); say(r.ok ? [T(Rules.repairCost(c) ? 'm1.hal.partial' : 'm1.hal.repaired'), `${r.pips} pip${r.pips > 1 ? 's' : ''} mended for ${Rules.fmtMoney(r.cost)}.`] : 'You have no coin for repairs.'); save(); };
     if (n.id === 'innkeeper') say(T('m1.fitch.greet'), () => menu({ title: purse, items: [
-      { label: 'Stay the night', right: () => Rules.pityNow(c) ? 'free' : Rules.INN_PRICE + 'c', act: () => { pop(); const r = Rules.rest(c); say(r.ok ? (r.free ? [T('m1.fitch.pity'), 'HP fully restored. No charge.'] : [T('m1.fitch.rest'), 'HP fully restored.']) : r.full ? r.msg : T('m1.fitch.poor')); save(); } },
+      { label: 'Stay the night', right: () => Rules.pityNow(c) ? 'free' : Rules.INN_PRICE + 'c', act: () => { pop(); const r = Rules.rest(c); say(r.ok ? (r.free ? T('m1.fitch.pity') : [T('m1.fitch.rest'), 'HP fully restored.']) : r.full ? r.msg : T('m1.fitch.poor')); save(); } },
       { label: 'No thanks', act: () => { pop(); if (Rules.declineInn(c)) save(); } }], onCancel: function () { pop(this); if (Rules.declineInn(c)) save(); } }));
     else if (n.id === 'shopkeeper') say(T('m1.wenna.greet'), () => {
       const ITEM_LINE = { herb: 'm1.item.herb', leatherVest: 'm1.item.vest', copperSword: 'm1.item.sword', woodenSword: 'm1.item.woodsword' };
       const buy = id => () => { const r = Rules.buy(c, id); say(r.ok ? [T(id === 'woodenSword' ? 'm1.wenna.woodsword' : 'm1.wenna.buy'), T(ITEM_LINE[id])] : r.gate || r.full ? r.msg : T('m1.wenna.poor')); if (r.ok) save(); };
-      const m = menu({ title: purse, items: [
+      const m = menu({ title: purse, cols: 2, w: 196, items: [ // 3x2 grid: y 12..120, clear of the dialogue box (y 140+)
         { label: 'Herb (you have ' + c.herbs + ')', right: Rules.fmtMoney(Rules.ITEMS.herb.price), act: buy('herb') },
         { label: 'Leather Vest', right: Rules.fmtMoney(90), act: buy('leatherVest') },
         { label: 'Wooden Sword', right: Rules.fmtMoney(75), act: buy('woodenSword') },
-        { label: 'Copper Sword', right: () => Rules.meetsReq(c, 'copperSword') ? Rules.fmtMoney(120) : 'STR 8', act: buy('copperSword') },
-        { label: 'Sell loot', right: () => Rules.fmtMoney(Rules.lootValue(c)), act: () => { const r = Rules.sellLoot(c); say(r.ok ? [T('m1.wenna.sell'), r.msg] : r.msg); if (r.ok) save(); } },
+        { label: 'Copper Sword', right: Rules.fmtMoney(120), locked: () => !Rules.meetsReq(c, 'copperSword'), tag: 'STR 8', act: buy('copperSword') },
+        { label: 'Sell loot', right: () => Rules.lootValue(c) > 0 ? Rules.fmtMoney(Rules.lootValue(c)) : '', /* no price line at 0 loot */ act: () => { const r = Rules.sellLoot(c); say(r.ok ? [T('m1.wenna.sell'), r.msg] : r.msg); if (r.ok) save(); } },
         { label: 'Leave', act: () => { pop(m); say(T('m1.wenna.idle')); } }] });
       Object.defineProperty(m.items[0], 'label', { get: () => 'Herb (have ' + c.herbs + ')' }); });
     else if (n.id === 'smith') { const L = ['m1.hal.greet', 'm1.hal.sword', 'm1.hal.nomagic', 'm1.hal.idle']; const line = T(L[(n.talks = (n.talks || 0) + 1) - 1 & 3]);
       if (!Rules.repairCost(c)) return say(line);
       say(T(c.dur.weapon === 0 || c.dur.armor === 0 ? 'm1.hal.broken' : 'm1.hal.worn'), () => menu({ title: () => purse() + '   Gear ' + c.dur.weapon + '/' + c.dur.armor, items: [
-        { label: 'Repair gear', right: () => Rules.fmtMoney(Rules.repairCost(c)), act: () => { pop(); const r = Rules.repair(c); say(r.ok ? [T(Rules.repairCost(c) ? 'm1.hal.partial' : 'm1.hal.repaired'), `${r.pips} pip${r.pips > 1 ? 's' : ''} mended for ${Rules.fmtMoney(r.cost)}.`] : 'You have no coin for repairs.'); save(); } },
+        { label: 'Repair gear', right: () => Rules.fmtMoney(Rules.repairCost(c)), act: () => { pop(); if (!Rules.repairWarn(c)) return doRepair();
+          say(HAL_WARN, () => menu({ title: purse, items: [{ label: 'Repair anyway', act: () => { pop(); doRepair(); } }, { label: 'Not now', act: () => pop() }] })); } },
         { label: 'Not now', act: () => pop() }] })); }
     else { const L = ['m1.townsfolk.01', 'm1.townsfolk.02', 'm1.townsfolk.03']; say(T(L[((n.talks = (n.talks || 0) + 1) - 1) % 3])); }
   }
@@ -934,7 +964,7 @@ body.portrait .round .vis{font-size:22px}
   function talkFacing() { const p = game.pl, [dx, dy] = World.DIRS[p.dir], n = npcAt(p.x + dx, p.y + dy), sg = signAt(p.x + dx, p.y + dy); if (n) talk(n); else if (sg) say(T(sg.text)); }
   function fieldMenu() {
     const c = game.s.char, d = Rules.derive(c);
-    menu({ title: c.name + '  Lv ' + c.lvl, items: [
+    menu({ title: c.name + '  Lv ' + c.lvl, cols: 2, items: [ // 2x2 grid: y 12..92, clear of the dialogue box (Status opens its dialog over it)
       { label: 'Status', act: () => (Rules.FLAGS.levelUp && c.points > 0) ? pointsMenu() : say([`${Rules.RACES[c.race].name}. HP ${c.hp}/${c.maxHp}. ATK ${d.atk} DEF ${d.def}.`, `STR ${c.str} DEX ${c.dex} VIT ${c.vit} INT ${c.int} WIS ${c.wis}. XP ${c.xp}.`, `${Rules.ITEMS[c.weapon].name} ${c.dur.weapon}/10, ${Rules.ITEMS[c.armor].name} ${c.dur.armor}/10. Herbs ${c.herbs}. ${purse()}.`]) },
       { label: 'Items', act: () => { const L = { club: 'm1.item.stick', woodenSword: 'm1.item.woodsword', copperSword: 'm1.item.sword', leatherVest: 'm1.item.vest', herb: 'm1.item.herb', fluff: 'm1.item.fluff', gland: 'm1.item.gland' };
         const ids = [c.weapon, c.armor, ...(c.herbs ? ['herb'] : []), ...(c.bag || []).map(s => s.id)].filter(id => L[id]); say(ids.map(id => T(L[id]) + (id === 'herb' ? ' (x' + c.herbs + ')' : (c.bag || []).find(s => s.id === id) ? ' (x' + c.bag.find(s => s.id === id).qty + ')' : ''))); } },
@@ -945,7 +975,7 @@ body.portrait .round .vis{font-size:22px}
   // so reloading mid-fight resumes it and is never a free escape (QA d8e477a #3).
   // Stat-point spend (FLAGS.levelUp only; OFF in M1 builds). One tap spends one point; the menu closes when none are left.
   function pointsMenu() {
-    const c = game.s.char, m = menu({ title: () => 'Stat points: ' + (c.points || 0), items: Rules.STATS.map(st => ({ label: st.toUpperCase(), right: () => String(c[st]),
+    const c = game.s.char, m = menu({ title: () => 'Stat points: ' + (c.points || 0), cols: 2, /* 3x2 grid: y 12..120 */ items: Rules.STATS.map(st => ({ label: st.toUpperCase(), right: () => String(c[st]),
       act: () => { if (Rules.spendPoint(c, st)) { save(); if (!(c.points > 0)) { pop(m); say(`${st.toUpperCase()} is now ${c[st]}.`); } } } })) });
     return m;
   }
@@ -1019,9 +1049,27 @@ body.portrait .round .vis{font-size:22px}
     // HUD
     TBX.frame(ctx, 4, 4, 92, 40); G.text(ctx, c.name, 10, 9, '#ffd878'); G.text(ctx, 'HP', 10, 20, '#f0ecdc'); G.text(ctx, c.hp + '/' + c.maxHp, 90, 20, c.hp < c.maxHp * .25 ? '#ff6a5a' : '#ffd878', 'right'); G.text(ctx, Rules.fmtMoney(c.coin), 90, 31, '#ffd878', 'right'); G.text(ctx, 'Herb ' + c.herbs, 10, 31, '#f0ecdc');
     G.text(ctx, m.name, W - 8, 8, '#f0ecdc', 'right');
-    for (const o of game.ov) o.draw(ctx, now);
+    for (const o of game.ov) if (!(game.domMenu && o.items)) o.draw(ctx, now); // portrait: menus live in #mgrid
     if (game.fade) { const f = game.fade, a = 1 - Math.abs(f.t / (f.dur / 2) - 1); ctx.fillStyle = `rgba(7,6,15,${Math.min(1, a * 1.2)})`; ctx.fillRect(0, 0, W, H); }
   }
+
+  // ---------- portrait menu panel (QA 3e4a3ff blocker) ----------
+  // Portrait draws the canvas at ~1x (width-bound), so 28-native menu rows are 28 CSS px with ~7px text. There the top menu
+  // renders as an HTML panel above the field instead (>=44px cells, 16px text); the canvas menus are hidden. Landscape is unchanged.
+  const mdom = document.createElement('div'); mdom.id = 'mgrid'; document.body.appendChild(mdom); let mdomKey = '';
+  const esc = v => String(v).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+  const val = v => typeof v === 'function' ? v() : v;
+  function syncMenuDom() {
+    const m = document.body.classList.contains('portrait') && game.mode === 'field' && game.s ? game.ov.filter(o => o.items).pop() || null : null; game.domMenu = m;
+    if (!m) { if (mdomKey) { mdom.style.display = 'none'; mdom.innerHTML = ''; mdomKey = ''; } return; }
+    const cells = m.items.map(it => [it.label, it.right ? val(it.right) : '', !!val(it.locked), it.tag || '']), key = JSON.stringify([val(m.title), m.sel, m.cols, cells]);
+    if (key === mdomKey) return; mdomKey = key;
+    mdom.innerHTML = (val(m.title) ? `<div class="mg-title">${esc(val(m.title))}</div>` : '') + `<div class="mg-grid" style="grid-template-columns:repeat(${m.cols},1fr)">` +
+      cells.map(([l, r, lk, tag], i) => `<button class="mg-cell${i === m.sel ? ' on' : ''}${lk ? ' locked' : ''}" data-i="${i}"><span class="mg-l">${esc(l)}</span>${r || (lk && tag) ? `<span class="mg-r">${esc(r)}${lk && tag ? `<span class="mg-tag">${esc(tag)}</span>` : ''}</span>` : ''}</button>`).join('') + '</div>';
+    mdom.style.display = 'block'; mdom.style.maxHeight = Math.max(120, cv.getBoundingClientRect().top - mdom.getBoundingClientRect().top - 8) + 'px';
+  }
+  mdom.addEventListener('pointerdown', e => { e.preventDefault(); pokePads(); const o = top(); if (!o) return; if (o instanceof TBX.Dialog) { o.advance(); return; }
+    const b = e.target.closest('.mg-cell'); if (b && o === game.domMenu) { const i = +b.dataset.i; o.sel = i; o.items[i].act(); } });
 
   // ---------- input ----------
   const DIRS = ['up', 'down', 'left', 'right'];
@@ -1039,7 +1087,7 @@ body.portrait .round .vis{font-size:22px}
     pokePads();
     if (game.mode === 'creator') { if (!game.kbd) creatorTap(x, y); return; }
     if (game.mode === 'battle') return game.battle && game.battle.tap(x, y);
-    const o = top(); if (!o) return; if (o instanceof TBX.Dialog) o.advance(); else if (!o.tap(x, y) && !(x >= o.x && x < o.x + o.w && y >= o.y && y < o.y + o.h)) o.onCancel();
+    const o = top(); if (!o) return; if (o instanceof TBX.Dialog) o.advance(); else if (game.domMenu === o) o.onCancel(); /* portrait: canvas menu is hidden, a field tap is outside it */ else if (!o.tap(x, y) && !(x >= o.x && x < o.x + o.w && y >= o.y && y < o.y + o.h)) o.onCancel();
   }
   const KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', z: 'A', Enter: 'A', ' ': 'A', x: 'B', Escape: 'B' };
   window.addEventListener('keydown', e => { const b = KEYS[e.key]; if (!b) return; e.preventDefault(); if (!e.repeat) hold(b); });
@@ -1068,6 +1116,7 @@ body.portrait .round .vis{font-size:22px}
     // Portrait (QA f25313a #4): the field sits right on top of the control deck (8px gap) so there's no dead band between them.
     st.style.top = Math.round(portrait ? Math.max(ins.t + 8, innerHeight - ins.b - 248 - H * s) : ins.t + (ah - H * s) / 2) + 'px';
     game.scale = s;
+    mdomKey = ''; // re-fit the portrait menu panel
   }
   window.addEventListener('resize', layout); layout();
   const flush = () => { if (game.s) save(); }; window.addEventListener('pagehide', flush); document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
@@ -1077,6 +1126,7 @@ body.portrait .round .vis{font-size:22px}
   function frame(t) {
     const dt = Math.min(100, t - last); last = t; game.now = t;
     if (game.mode === 'field') updateField(dt); else if (game.mode === 'battle') { game.s.time += dt; game.battle.update(dt); }
+    syncMenuDom();
     if (game.mode === 'creator') drawCreator(t); else if (game.mode === 'battle') game.battle.draw(ctx, t); else drawField(t);
     requestAnimationFrame(frame);
   }
